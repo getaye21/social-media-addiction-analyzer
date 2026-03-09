@@ -1,16 +1,40 @@
-name: Sync to Hugging Face hub
+name: Deploy to Hugging Face
+
 on:
   push:
     branches: [main]
 
 jobs:
-  sync-to-hub:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - name: Push to hub
+      
+      - name: Set up Git
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+      
+      - name: Clone Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push https://Getaye:$HF_TOKEN@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main
+        run: |
+          # Clone the Hugging Face Space using token
+          git clone https://user:$HF_TOKEN@huggingface.co/spaces/${{ secrets.HF_USERNAME }}/ml-image-classifier
+          
+      - name: Copy files to Hugging Face Space
+        run: |
+          # Copy all files except .git folder
+          rsync -av --exclude='.git' ./ ml-image-classifier/
+          
+      - name: Commit and push to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          cd ml-image-classifier
+          git add .
+          git commit -m "Deploy from GitHub: $(date)"
+          git push https://user:$HF_TOKEN@huggingface.co/spaces/${{ secrets.HF_USERNAME }}/ml-image-classifier main
