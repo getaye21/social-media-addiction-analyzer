@@ -18,16 +18,29 @@ jobs:
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
       
+      - name: Debug - Show token first 4 chars (safely)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          echo "Token starts with: ${HF_TOKEN:0:4}..."
+          echo "Token length: ${#HF_TOKEN}"
+      
       - name: Clone Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Clone using token
+          echo "Cloning with token..."
           git clone https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp_space
+          if [ $? -eq 0 ]; then
+            echo "✅ Clone successful!"
+          else
+            echo "❌ Clone failed!"
+            exit 1
+          fi
           
       - name: Copy files to Hugging Face Space
         run: |
-          # Copy all files except .git folder and temp_space
+          echo "Copying files..."
           rsync -av --delete --exclude='.git' --exclude='.github' --exclude='temp_space' ./ temp_space/
           
       - name: Commit and push to Hugging Face
@@ -37,12 +50,22 @@ jobs:
           cd temp_space
           git add .
           
-          # Only commit if there are changes
+          # Show current remote URL
+          echo "Current remote URL:"
+          git remote -v
+          
           if git diff --quiet && git diff --staged --quiet; then
             echo "No changes to deploy"
           else
             git commit -m "Deploy from GitHub: $(date)"
-            # CRITICAL FIX: Use token in push URL
-            git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main
-            echo "✅ Deployed successfully!"
+            
+            # FORCE update the remote URL with token
+            git remote set-url origin https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer
+            
+            echo "New remote URL:"
+            git remote -v
+            
+            echo "Pushing..."
+            git push origin main
+            echo "✅ If you see this, push succeeded!"
           fi
