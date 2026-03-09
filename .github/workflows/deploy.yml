@@ -1,73 +1,46 @@
-name: Deploy to Hugging Face
+name: Deploy to Hugging Face (SSH)
 
 on:
   push:
     branches: [main]
 
 jobs:
-  sync:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.8.0
         with:
-          fetch-depth: 0
-          
-      - name: Push to Hugging Face
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_USERNAME: Getaye
-          SPACE_NAME: social-media-addiction-analyzer
+          ssh-private-key: ${{ secrets.HF_SSH_KEY }}
+
+      - name: Add Hugging Face to known hosts
         run: |
-          echo "🚀 Starting deployment to Hugging Face Spaces..."
-          echo "Username: $HF_USERNAME"
-          echo "Space: $SPACE_NAME"
-          echo "Token length: ${#HF_TOKEN} characters"
-          
-          # Configure git
+          mkdir -p ~/.ssh
+          ssh-keyscan hf.co >> ~/.ssh/known_hosts
+
+      - name: Deploy to Hugging Face Space
+        run: |
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # Clone the space using token in URL (THIS FORMAT WORKS FOR OTHERS)
-          echo "📦 Cloning space..."
-          git clone https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$SPACE_NAME temp_space
+          echo "🚀 Cloning space via SSH..."
+          # Use the SSH URL format: git@hf.co:spaces/username/space-name
+          git clone git@hf.co:spaces/Getaye/social-media-addiction-analyzer temp_space
           
-          if [ $? -ne 0 ]; then
-            echo "❌ Failed to clone. Checking if space exists..."
-            echo "Please verify: https://huggingface.co/spaces/$HF_USERNAME/$SPACE_NAME"
-            exit 1
-          fi
-          
-          # Copy files (excluding .git, .github, and temp_space)
           echo "📋 Copying files..."
-          rsync -av --delete \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='temp_space' \
-            --exclude='*.pyc' \
-            --exclude='__pycache__' \
-            ./ temp_space/
+          rsync -av --delete --exclude='.git' --exclude='.github' --exclude='temp_space' ./ temp_space/
           
-          # Commit and push
-          echo "💾 Committing changes..."
           cd temp_space
           git add .
           
           if git diff --quiet && git diff --staged --quiet; then
-            echo "✨ No changes to deploy"
+            echo "✨ No changes to deploy."
           else
-            git commit -m "Deploy from GitHub: $(date)"
-            echo "📤 Pushing to Hugging Face..."
-            git push https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$SPACE_NAME main
-            
-            if [ $? -eq 0 ]; then
-              echo "✅ Deployed successfully!"
-              echo "🌐 Your app is live at: https://huggingface.co/spaces/$HF_USERNAME/$SPACE_NAME"
-            else
-              echo "❌ Push failed!"
-              exit 1
-            fi
+            git commit -m "Deploy from GitHub Actions on $(date)"
+            echo "📤 Pushing via SSH..."
+            git push
+            echo "✅ Deployment successful via SSH!"
           fi
-          
-          # Cleanup
-          cd ..
-          rm -rf temp_space
