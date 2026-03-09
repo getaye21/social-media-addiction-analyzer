@@ -11,14 +11,36 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
-          fetch-depth: 0
+          python-version: '3.9'
           
-      - name: Deploy to Hugging Face Spaces
-        uses: huggingface/transformers-hub-deploy-action@main
-        with:
-          hf_token: ${{ secrets.HF_TOKEN }}
-          repo_id: Getaye/social-media-addiction-analyzer
-          repo_type: space
-          space_sdk: streamlit
-          working_directory: ./
+      - name: Install huggingface-hub
+        run: pip install huggingface-hub
+        
+      - name: Deploy to HF
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # Use huggingface-hub to upload directly (no git cloning!)
+          python -c "
+from huggingface_hub import HfApi, create_repo
+import os
+import glob
+
+api = HfApi(token=os.environ['HF_TOKEN'])
+
+# Upload all files
+for file in glob.glob('**/*', recursive=True):
+    if os.path.isfile(file) and not file.startswith('.git'):
+        print(f'Uploading {file}...')
+        api.upload_file(
+            path_or_fileobj=file,
+            path_in_repo=file,
+            repo_id='Getaye/social-media-addiction-analyzer',
+            repo_type='space'
+        )
+print('✅ Deployment complete!')
+          "
