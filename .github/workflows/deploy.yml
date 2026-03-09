@@ -9,33 +9,19 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          path: source-code
+      - uses: actions/checkout@v3
       
-      - name: Deploy to HF
+      - name: Push to Hugging Face
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_TOKEN: ${{ secrets.deploy_token }}  # Using your existing token
         run: |
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # Create a fresh directory
-          mkdir deploy
-          cd deploy
+          echo "🚀 Deploying using deploy_token..."
+          echo "Token length: ${#HF_TOKEN} characters"
           
-          # Initialize new git repo
-          git init
+          # Push directly to Hugging Face
+          git push https://Getaye:$HF_TOKEN@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main --force
           
-          # Copy ALL files from source (excluding .git)
-          cp -rf ../source-code/* .
-          cp -rf ../source-code/.env* . 2>/dev/null || true
-          
-          # Add HF remote
-          git remote add origin https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer
-          
-          # Commit and push
-          git add .
-          git commit -m "Deploy from GitHub: $(date)"
-          git push origin main --force
+          echo "✅ Push complete! Check your Space in 2-3 minutes"
