@@ -1,46 +1,34 @@
-name: Deploy to Hugging Face (SSH)
+name: Deploy to Hugging Face
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.8.0
-        with:
-          ssh-private-key: ${{ secrets.HF_SSH_KEY }}
-
-      - name: Add Hugging Face to known hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan hf.co >> ~/.ssh/known_hosts
-
-      - name: Deploy to Hugging Face Space
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to HF
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          echo "🚀 Cloning space via SSH..."
-          # Use the SSH URL format: git@hf.co:spaces/username/space-name
-          git clone git@hf.co:spaces/Getaye/social-media-addiction-analyzer temp_space
+          echo "🚀 Cloning current HF Space..."
+          git clone https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp
           
-          echo "📋 Copying files..."
-          rsync -av --delete --exclude='.git' --exclude='.github' --exclude='temp_space' ./ temp_space/
+          echo "📋 Copying new files..."
+          cp -rf * temp/ 2>/dev/null || true
+          cp -rf .env* temp/ 2>/dev/null || true
           
-          cd temp_space
+          echo "💾 Pushing changes..."
+          cd temp
           git add .
+          git commit -m "Deploy from GitHub: $(date)" || echo "No changes"
+          git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main --force
           
-          if git diff --quiet && git diff --staged --quiet; then
-            echo "✨ No changes to deploy."
-          else
-            git commit -m "Deploy from GitHub Actions on $(date)"
-            echo "📤 Pushing via SSH..."
-            git push
-            echo "✅ Deployment successful via SSH!"
-          fi
+          echo "✅ Deployment complete!"
