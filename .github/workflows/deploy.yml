@@ -11,24 +11,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
       
+      - name: Set up Git
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+      
       - name: Deploy to HF
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          echo "Using token: ${HF_TOKEN:0:10}..."
+          # Configure git to use the token for authentication
+          git config --global credential.helper store
+          echo "https://Getaye:${HF_TOKEN}@huggingface.co" > ~/.git-credentials
           
-          # Configure git
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "GitHub Actions"
+          # Clone the space
+          git clone https://huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp
           
-          # Clone with the CORRECT token
-          git clone https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp
+          # Copy files (excluding .git)
+          rsync -av --delete --exclude='.git' --exclude='.github' --exclude='temp' ./ temp/
           
-          # Copy files
-          cp -r * temp/ 2>/dev/null || true
-          
-          # Push back
+          # Commit and push
           cd temp
           git add .
-          git commit -m "Deploy from GitHub" || echo "No changes"
-          git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "No changes to deploy"
+          else
+            git commit -m "Deploy from GitHub: $(date)"
+            git push
+            echo "✅ Deployed successfully!"
+          fi
