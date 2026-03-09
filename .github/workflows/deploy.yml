@@ -3,7 +3,7 @@ name: Deploy to Hugging Face
 on:
   push:
     branches: [main]
-  workflow_dispatch:  # Allows manual triggering
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -19,16 +19,25 @@ jobs:
           git config --global user.name "GitHub Actions"
           
           echo "🚀 Cloning current HF Space..."
-          git clone https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp
+          git clone https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp_space
           
-          echo "📋 Copying new files..."
-          cp -rf * temp/ 2>/dev/null || true
-          cp -rf .env* temp/ 2>/dev/null || true
+          echo "📋 Copying new files (excluding .git)..."
+          # Remove everything except .git from temp_space
+          find temp_space -mindepth 1 -not -path "temp_space/.git*" -delete
+          
+          # Copy all files from current repo except .git and temp_space
+          rsync -av --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='temp_space' \
+            ./ temp_space/
           
           echo "💾 Pushing changes..."
-          cd temp
+          cd temp_space
           git add .
-          git commit -m "Deploy from GitHub: $(date)" || echo "No changes"
-          git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main --force
+          git commit -m "Deploy from GitHub: $(date)" || echo "No changes to commit"
+          git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main
           
           echo "✅ Deployment complete!"
+          cd ..
+          rm -rf temp_space
