@@ -22,8 +22,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Clone the Hugging Face Space using token with CORRECT username and space name
-          echo "Cloning from https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer"
+          # Clone using token
           git clone https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp_space
           
       - name: Copy files to Hugging Face Space
@@ -43,6 +42,7 @@ jobs:
             echo "No changes to deploy"
           else
             git commit -m "Deploy from GitHub: $(date)"
+            # CRITICAL FIX: Use token in push URL
             git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main
             echo "✅ Deployed successfully!"
           fi
