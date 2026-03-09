@@ -22,19 +22,27 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Clone the Hugging Face Space using token
-          git clone https://user:$HF_TOKEN@huggingface.co/spaces/${{ secrets.HF_USERNAME }}/ml-image-classifier
+          # Clone the Hugging Face Space using token with CORRECT username and space name
+          echo "Cloning from https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer"
+          git clone https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp_space
           
       - name: Copy files to Hugging Face Space
         run: |
-          # Copy all files except .git folder
-          rsync -av --exclude='.git' ./ ml-image-classifier/
+          # Copy all files except .git folder and temp_space
+          rsync -av --delete --exclude='.git' --exclude='.github' --exclude='temp_space' ./ temp_space/
           
       - name: Commit and push to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          cd ml-image-classifier
+          cd temp_space
           git add .
-          git commit -m "Deploy from GitHub: $(date)"
-          git push https://user:$HF_TOKEN@huggingface.co/spaces/${{ secrets.HF_USERNAME }}/ml-image-classifier main
+          
+          # Only commit if there are changes
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "No changes to deploy"
+          else
+            git commit -m "Deploy from GitHub: $(date)"
+            git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main
+            echo "✅ Deployed successfully!"
+          fi
