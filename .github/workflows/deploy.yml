@@ -1,4 +1,4 @@
-name: Simple Deploy
+name: Deploy to Hugging Face
 
 on:
   push:
@@ -11,26 +11,36 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
       
-      - name: Deploy to HF
+      - name: Set up Git
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+      
+      - name: Deploy to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Configure git
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "GitHub Actions"
+          # Create a temporary directory
+          mkdir deploy
+          cd deploy
           
-          # Clone with token
-          echo "Cloning with token..."
-          git clone https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp_space
+          # Initialize a new git repository
+          git init
           
-          # Copy files
-          cp -r * temp_space/ 2>/dev/null || true
-          cp -r .env* temp_space/ 2>/dev/null || true
+          # Copy all files from the original repo (excluding .git)
+          rsync -av --exclude='.git' ../ ./ 
           
-          # Commit and push
-          cd temp_space
+          # Add everything
           git add .
-          git commit -m "Deploy from GitHub" || echo "No changes"
+          git commit -m "Deploy from GitHub Actions"
           
-          # Force push with token in URL
-          git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main --force
+          # Force push to Hugging Face using token in URL
+          # This is the KEY - we construct the URL carefully
+          REPO_URL="https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer"
+          
+          # Add remote and push
+          git remote add origin $REPO_URL
+          git branch -M main
+          git push -u origin main --force
+          
+          echo "✅ Deployed successfully!"
