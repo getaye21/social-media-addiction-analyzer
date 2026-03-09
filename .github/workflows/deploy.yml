@@ -9,35 +9,16 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Deploy to HF
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "GitHub Actions"
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
           
-          echo "🚀 Cloning current HF Space..."
-          git clone https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp_space
-          
-          echo "📋 Copying new files (excluding .git)..."
-          # Remove everything except .git from temp_space
-          find temp_space -mindepth 1 -not -path "temp_space/.git*" -delete
-          
-          # Copy all files from current repo except .git and temp_space
-          rsync -av --delete \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='temp_space' \
-            ./ temp_space/
-          
-          echo "💾 Pushing changes..."
-          cd temp_space
-          git add .
-          git commit -m "Deploy from GitHub: $(date)" || echo "No changes to commit"
-          git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main
-          
-          echo "✅ Deployment complete!"
-          cd ..
-          rm -rf temp_space
+      - name: Deploy to Hugging Face Spaces
+        uses: huggingface/transformers-hub-deploy-action@main
+        with:
+          hf_token: ${{ secrets.HF_TOKEN }}
+          repo_id: Getaye/social-media-addiction-analyzer
+          repo_type: space
+          space_sdk: streamlit
+          working_directory: ./
