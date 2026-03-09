@@ -22,8 +22,10 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          echo "Cloning with token: ${HF_TOKEN:0:4}..."
-          git clone https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp_space
+          # URL-encode the token to handle special characters
+          ENCODED_TOKEN=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$HF_TOKEN'))")
+          echo "Cloning with encoded token..."
+          git clone https://Getaye:${ENCODED_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp_space
           
       - name: Copy files to Hugging Face Space
         run: |
@@ -36,16 +38,16 @@ jobs:
           cd temp_space
           git add .
           
-          echo "Token available: ${HF_TOKEN:0:4}..."
+          # URL-encode the token for push
+          ENCODED_TOKEN=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$HF_TOKEN'))")
           
           if git diff --quiet && git diff --staged --quiet; then
             echo "No changes to deploy"
           else
             git commit -m "Deploy from GitHub: $(date)"
             
-            # DIRECT PUSH WITH TOKEN IN URL
-            echo "Pushing to Hugging Face..."
-            git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main
+            echo "Pushing with encoded token..."
+            git push https://Getaye:${ENCODED_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main
             
             if [ $? -eq 0 ]; then
               echo "✅ Deployed successfully!"
