@@ -11,36 +11,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
       
-      - name: Set up Git
-        run: |
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "GitHub Actions"
-      
-      - name: Deploy to Hugging Face
+      - name: Deploy to HF
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Create a temporary directory
-          mkdir deploy
-          cd deploy
+          echo "Using token: ${HF_TOKEN:0:10}..."
           
-          # Initialize a new git repository
-          git init
+          # Configure git
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
           
-          # Copy all files from the original repo (excluding .git)
-          rsync -av --exclude='.git' ../ ./ 
+          # Clone with the CORRECT token
+          git clone https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer temp
           
-          # Add everything
+          # Copy files
+          cp -r * temp/ 2>/dev/null || true
+          
+          # Push back
+          cd temp
           git add .
-          git commit -m "Deploy from GitHub Actions"
-          
-          # Force push to Hugging Face using token in URL
-          # This is the KEY - we construct the URL carefully
-          REPO_URL="https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer"
-          
-          # Add remote and push
-          git remote add origin $REPO_URL
-          git branch -M main
-          git push -u origin main --force
-          
-          echo "✅ Deployed successfully!"
+          git commit -m "Deploy from GitHub" || echo "No changes"
+          git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main
