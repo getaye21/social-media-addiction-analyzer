@@ -11,36 +11,31 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
-      - name: Setup Python
-        uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
-          
-      - name: Install huggingface-hub
-        run: pip install huggingface-hub
-        
+          path: source-code
+      
       - name: Deploy to HF
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Use huggingface-hub to upload directly (no git cloning!)
-          python -c "
-from huggingface_hub import HfApi, create_repo
-import os
-import glob
-
-api = HfApi(token=os.environ['HF_TOKEN'])
-
-# Upload all files
-for file in glob.glob('**/*', recursive=True):
-    if os.path.isfile(file) and not file.startswith('.git'):
-        print(f'Uploading {file}...')
-        api.upload_file(
-            path_or_fileobj=file,
-            path_in_repo=file,
-            repo_id='Getaye/social-media-addiction-analyzer',
-            repo_type='space'
-        )
-print('✅ Deployment complete!')
-          "
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+          
+          # Create a fresh directory
+          mkdir deploy
+          cd deploy
+          
+          # Initialize new git repo
+          git init
+          
+          # Copy ALL files from source (excluding .git)
+          cp -rf ../source-code/* .
+          cp -rf ../source-code/.env* . 2>/dev/null || true
+          
+          # Add HF remote
+          git remote add origin https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer
+          
+          # Commit and push
+          git add .
+          git commit -m "Deploy from GitHub: $(date)"
+          git push origin main --force
