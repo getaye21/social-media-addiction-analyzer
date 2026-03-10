@@ -47,13 +47,6 @@ st.markdown("""
         gap: 15px;
     }
     
-    .header-title span {
-        background: rgba(255,255,255,0.2);
-        padding: 10px 20px;
-        border-radius: 50px;
-        font-size: 1.5rem;
-    }
-    
     .university-name {
         font-size: 1.8rem;
         font-weight: 600;
@@ -76,7 +69,45 @@ st.markdown("""
         display: inline-block;
     }
     
-    /* Interactive card effects */
+    /* Module cards */
+    .module-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        border: 1px solid #E5E7EB;
+        transition: transform 0.3s, box-shadow 0.3s;
+        cursor: pointer;
+        height: 100%;
+    }
+    
+    .module-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        border-color: #2563EB;
+    }
+    
+    .module-icon {
+        font-size: 2.5rem;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    
+    .module-title {
+        font-size: 1.3rem;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 0.5rem;
+        color: #1E3A8A;
+    }
+    
+    .module-description {
+        text-align: center;
+        color: #4B5563;
+        font-size: 0.95rem;
+    }
+    
+    /* Risk card styles */
     .risk-card {
         transition: transform 0.3s, box-shadow 0.3s;
         cursor: pointer;
@@ -134,17 +165,6 @@ st.markdown("""
         box-shadow: 0 5px 15px rgba(16, 185, 129, 0.2);
     }
     
-    /* Login box styling */
-    .login-box {
-        background: linear-gradient(135deg, #F3F4F6, #E5E7EB);
-        padding: 2.5rem;
-        border-radius: 20px;
-        border: 1px solid #D1D5DB;
-        max-width: 450px;
-        margin: 2rem auto;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-    }
-    
     /* Admin panel styling */
     .admin-panel {
         background: linear-gradient(135deg, #1E293B, #0F172A);
@@ -153,14 +173,6 @@ st.markdown("""
         color: white;
         margin: 1rem 0;
         border-left: 5px solid #F59E0B;
-    }
-    
-    /* Feedback buttons */
-    .feedback-btn {
-        display: flex;
-        gap: 1rem;
-        justify-content: center;
-        margin: 1rem 0;
     }
     
     /* Metric cards */
@@ -184,7 +196,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- Enhanced University Header with Graduation Icon ---
+# --- University Header ---
 st.markdown("""
 <div class="main-header">
     <div class="header-title">
@@ -285,11 +297,10 @@ if 'logged_in' not in st.session_state:
     st.session_state.feedback_given = {}
     st.session_state.current_page = "main"
 
-# --- LOGIN PAGE (Only Login, No Signup) ---
+# --- LOGIN PAGE (Clean, No Box) ---
 if not st.session_state.logged_in:
-    st.markdown('<div class="login-box">', unsafe_allow_html=True)
-    st.markdown("### 🔐 Admin Login")
-    st.markdown("Please login with your credentials")
+    st.markdown("### 🔐 Login")
+    st.markdown("Please enter your credentials to access the analyzer")
     
     with st.form("login_form"):
         username = st.text_input("Username", placeholder="Enter your username")
@@ -302,12 +313,10 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.session_state.is_admin = user[3] == 1
-                st.success("✅ Login successful! Redirecting...")
+                st.success("✅ Login successful!")
                 st.rerun()
             else:
                 st.error("❌ Invalid username or password")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
 # --- MAIN APPLICATION AFTER LOGIN ---
@@ -317,7 +326,7 @@ with st.sidebar:
     
     # Navigation
     st.markdown("### 📍 Navigation")
-    if st.button("🏠 Dashboard", use_container_width=True):
+    if st.button("🏠 Home", use_container_width=True):
         st.session_state.current_page = "main"
     if st.button("📊 Risk Analyzer", use_container_width=True):
         st.session_state.current_page = "analyzer"
@@ -338,30 +347,68 @@ with st.sidebar:
         st.session_state.is_admin = False
         st.session_state.current_page = "main"
         st.rerun()
+
+# --- HOME PAGE WITH MODULES (Like User Management) ---
+if st.session_state.current_page == "main":
+    st.markdown("## 📋 Application Modules")
     
-    # Quick info
+    # Create 3 columns for modules
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        <div class="module-card">
+            <div class="module-icon">📊</div>
+            <div class="module-title">Risk Assessment</div>
+            <div class="module-description">
+                Analyze your social media usage patterns and get personalized risk assessment with adaptive AI technology.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Open Risk Analyzer", key="btn1", use_container_width=True):
+            st.session_state.current_page = "analyzer"
+            st.rerun()
+    
+    with col2:
+        st.markdown("""
+        <div class="module-card">
+            <div class="module-icon">📈</div>
+            <div class="module-title">Usage Analytics</div>
+            <div class="module-description">
+                Track your daily usage patterns, get insights about your social media habits and digital wellbeing.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.info("Coming Soon", icon="⏳")
+    
+    with col3:
+        st.markdown("""
+        <div class="module-card">
+            <div class="module-icon">🎯</div>
+            <div class="module-title">Digital Wellness</div>
+            <div class="module-description">
+                Access resources, tips, and personalized recommendations for maintaining healthy digital habits.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.info("Coming Soon", icon="⏳")
+    
+    # Quick info section
     st.markdown("---")
-    st.markdown("### 📊 Risk Guide")
+    st.markdown("### ℹ️ About This Application")
     st.markdown("""
-    **Platform Risk:**
-    - 🔴 Telegram, YouTube, TikTok
-    - 🟡 Facebook, LinkedIn
-    - 🟢 WhatsApp, Twitter
+    This application uses **Adaptive AdaBoost Machine Learning** to analyze social media addiction risk based on:
     
-    **Experience Risk:**
-    - 🔴 >5 years
-    - 🟡 2-5 years
-    - 🟢 <2 years
+    - 📱 Daily usage patterns and platform choices
+    - 😴 Sleep habits and mental health indicators
+    - 📊 Usage experience and behavioral patterns
     
-    **Usage Risk:**
-    - 🔴 >3 hrs/day
-    - 🟡 2-3 hrs/day
-    - 🟢 <2 hrs/day
+    The model continuously learns from user feedback to improve accuracy.
     """)
 
 # --- USER MANAGEMENT PAGE (Only for admin) ---
-if st.session_state.current_page == "user_management" and st.session_state.is_admin:
-    st.markdown("## 👥 User Management")
+elif st.session_state.current_page == "user_management" and st.session_state.is_admin:
+    st.markdown("## 👥 User Management Module")
     st.markdown('<div class="admin-panel">', unsafe_allow_html=True)
     st.markdown("### Create New User")
     
@@ -391,23 +438,14 @@ if st.session_state.current_page == "user_management" and st.session_state.is_ad
         st.markdown("### 📋 Existing Users")
         users_df = get_all_users()
         if not users_df.empty:
-            # Style the dataframe
-            styled_df = users_df.style.applymap(
-                lambda x: 'color: orange; font-weight: bold' if x == 1 else '',
-                subset=['is_admin']
-            )
             st.dataframe(users_df, use_container_width=True)
             st.caption(f"Total Users: {len(users_df)}")
     
     st.markdown('</div>', unsafe_allow_html=True)
-    
-    if st.button("← Back to Dashboard"):
-        st.session_state.current_page = "main"
-        st.rerun()
 
 # --- FEEDBACK PAGE (Only for admin) ---
 elif st.session_state.current_page == "feedback" and st.session_state.is_admin:
-    st.markdown("## 📊 Feedback Analytics")
+    st.markdown("## 📊 Feedback Analytics Module")
     st.markdown('<div class="admin-panel">', unsafe_allow_html=True)
     
     conn = sqlite3.connect('users.db')
@@ -415,7 +453,6 @@ elif st.session_state.current_page == "feedback" and st.session_state.is_admin:
     conn.close()
     
     if not feedback_df.empty:
-        # Summary metrics
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Total Feedback", len(feedback_df))
@@ -432,7 +469,6 @@ elif st.session_state.current_page == "feedback" and st.session_state.is_admin:
         st.markdown("### 📋 Detailed Feedback")
         st.dataframe(feedback_df, use_container_width=True)
         
-        # Model adaptation info
         st.markdown("### 🤖 Model Adaptation Status")
         st.info(f"Model has learned from {len(feedback_df)} feedback instances. "
                 f"Confidence adjustment: {min(0.15, len(feedback_df) * 0.01):.2f}")
@@ -440,31 +476,18 @@ elif st.session_state.current_page == "feedback" and st.session_state.is_admin:
         st.info("No feedback data yet")
     
     st.markdown('</div>', unsafe_allow_html=True)
-    
-    if st.button("← Back to Dashboard"):
-        st.session_state.current_page = "main"
-        st.rerun()
 
-# --- MAIN ANALYZER PAGE ---
-elif st.session_state.current_page in ["main", "analyzer"]:
-    
-    # Welcome banner
-    st.markdown(f"""
-    <div style="background: linear-gradient(90deg, #1E3A8A20, #2563EB20); padding: 1rem; border-radius: 10px; margin-bottom: 2rem;">
-        <h4>🎓 Welcome back, {st.session_state.username}! Use the analyzer below to check your social media addiction risk.</h4>
-    </div>
-    """, unsafe_allow_html=True)
+# --- RISK ANALYZER PAGE ---
+elif st.session_state.current_page == "analyzer":
     
     st.markdown("## 📱 Social Media Habits Assessment")
     
-    # Input form
     col1, col2 = st.columns(2)
     
     with col1:
         age = st.number_input("Age", 13, 80, 22)
         daily_hours = st.slider("Daily Usage (hours)", 0.5, 12.0, 2.5, 0.5)
         
-        # Usage experience calculation
         current_year = datetime.now().year
         start_year = st.number_input("Year you started using social media", 
                                     min_value=2000, max_value=current_year, value=2018)
@@ -648,7 +671,6 @@ elif st.session_state.current_page in ["main", "analyzer"]:
                     <li>⏰ Set strict app timers (30-minute daily limits)</li>
                     <li>🌙 No phones in bedroom - charge outside at night</li>
                     <li>🎯 Take a 7-day digital detox challenge</li>
-                    <li>👥 Seek professional help if feeling dependent</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
@@ -660,8 +682,7 @@ elif st.session_state.current_page in ["main", "analyzer"]:
                     <li>📱 Limit usage to 2-3 hours per day</li>
                     <li>⏰ Use focus mode during work/study hours</li>
                     <li>🌙 No phone 1 hour before bed</li>
-                    <li>🎯 Schedule phone-free weekends</li>
-                    <li>📊 Track your usage weekly and set reduction goals</li>
+                    <li>📊 Track your usage weekly</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
@@ -670,11 +691,10 @@ elif st.session_state.current_page in ["main", "analyzer"]:
             <div style="background: #D1FAE5; padding: 1.5rem; border-radius: 10px;">
                 <h4 style="color: #065F46;">🟢 LOW RISK - Maintain Healthy Habits:</h4>
                 <ul style="color: #065F46;">
-                    <li>📱 Keep using only when necessary - you're doing great!</li>
+                    <li>📱 Keep using only when necessary</li>
                     <li>⏰ Continue monitoring your daily usage</li>
                     <li>🌙 Maintain good sleep hygiene</li>
-                    <li>🎯 Use social media intentionally, not habitually</li>
-                    <li>👥 Encourage friends/family to maintain balance too</li>
+                    <li>🎯 Use social media intentionally</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
