@@ -4,11 +4,9 @@ import numpy as np
 import joblib
 import plotly.graph_objects as go
 from datetime import datetime
+import hashlib
+import sqlite3
 import os
-from sklearn.ensemble import AdaBoostClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
 
 # --- Page Config ---
 st.set_page_config(
@@ -17,198 +15,284 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- 1. "Self-Healing" Training Logic ---
-def train_model_if_missing():
-    """Trains the model if .pkl files are missing from the environment."""
-    if not os.path.exists('adaboost_model.pkl'):
-        with st.spinner("🔧 Initializing Model for the first time... This takes about 15 seconds."):
-            # Generate synthetic data based on research patterns
-            np.random.seed(42)
-            n_samples = 5000
-            data = {
-                'age': np.random.randint(13, 50, n_samples),
-                'gender': np.random.choice(['Male', 'Female', 'Other'], n_samples),
-                'daily_usage_hours': np.random.uniform(0.5, 15.0, n_samples),
-                'primary_platform': np.random.choice(['Instagram', 'TikTok', 'Facebook', 'Snapchat', 'WhatsApp', 'Twitter', 'YouTube', 'Other'], n_samples),
-                'sleep_hours': np.random.uniform(3.0, 10.0, n_samples),
-                'mental_health_score': np.random.randint(1, 11, n_samples),
-                'monthly_conflicts': np.random.poisson(3, n_samples),
-                'academic_impact': np.random.choice(['Never', 'Sometimes', 'Often'], n_samples),
-                'age_of_first_use': np.random.randint(8, 30, n_samples),
-            }
-            df = pd.DataFrame(data)
-
-            # Feature Engineering
-            le_dict = {}
-            for col in ['gender', 'primary_platform', 'academic_impact']:
-                le = LabelEncoder()
-                df[f'{col}_encoded'] = le.fit_transform(df[col])
-                le_dict[col] = le
-
-            platform_risk_map = {'TikTok': 3, 'Instagram': 3, 'Snapchat': 3, 'Facebook': 2, 'Twitter': 2, 'WhatsApp': 2, 'YouTube': 2, 'Other': 1}
-            df['platform_risk_score'] = df['primary_platform'].map(platform_risk_map)
-            df['usage_sleep_ratio'] = df['daily_usage_hours'] / (df['sleep_hours'] + 0.1)
-            df['mental_health_risk'] = 10 - df['mental_health_score']
-            df['conflict_rate'] = df['monthly_conflicts'] / (df['daily_usage_hours'] + 0.1)
-            df['early_exposure_risk'] = np.where(df['age_of_first_use'] < 13, 3, np.where(df['age_of_first_use'] < 16, 2, 1))
-
-            # Target Creation (Addiction Level) - FIXED NaN ERROR
-            score = (df['daily_usage_hours'] * 0.30 + df['platform_risk_score'] * 0.20 + (10 - df['sleep_hours']) * 0.15 + (10 - df['mental_health_score']) * 0.20)
-            score = score.replace([np.inf, -np.inf], np.nan).fillna(score.median())
-            score = (score - score.min()) / (score.max() - score.min() + 1e-6) * 10
-            
-            df['target'] = pd.cut(
-                score, 
-                bins=[-0.1, 4, 7, 10.1], 
-                labels=[0, 1, 2],
-                include_lowest=True
-            ).fillna(0).astype(int)
-
-            feature_cols = ['age', 'gender_encoded', 'daily_usage_hours', 'sleep_hours', 'mental_health_score', 'monthly_conflicts', 'platform_risk_score', 'usage_sleep_ratio', 'mental_health_risk', 'conflict_rate', 'primary_platform_encoded', 'academic_impact_encoded', 'early_exposure_risk']
-            
-            X, y = df[feature_cols], df['target']
-            
-            # FIXED: Removed 'algorithm' for scikit-learn v1.6+ compatibility
-            model = AdaBoostClassifier(
-                estimator=DecisionTreeClassifier(max_depth=2), 
-                n_estimators=200, 
-                learning_rate=0.8, 
-                random_state=42
-            )
-            model.fit(X, y)
-
-            # Save artifacts
-            joblib.dump(model, 'adaboost_model.pkl')
-            joblib.dump(le_dict, 'label_encoders.pkl')
-            joblib.dump(feature_cols, 'feature_columns.pkl')
-            st.toast("✅ Model Trained & Ready!")
-
-# --- 2. Custom CSS ---
+# --- Custom CSS for Professional Look ---
 st.markdown("""
 <style>
     .main-header {
         background: linear-gradient(90deg, #1E3A8A 0%, #2563EB 100%);
-        padding: 1.5rem; border-radius: 15px; color: white; text-align: center; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        padding: 2rem;
+        border-radius: 15px;
+        color: white;
+        text-align: center;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    .risk-high { background-color: #FEE2E2; color: #991B1B; padding: 1.2rem; border-radius: 10px; border-left: 8px solid #DC2626; font-weight: bold; }
-    .risk-moderate { background-color: #FEF3C7; color: #92400E; padding: 1.2rem; border-radius: 10px; border-left: 8px solid #F59E0B; font-weight: bold; }
-    .risk-low { background-color: #D1FAE5; color: #065F46; padding: 1.2rem; border-radius: 10px; border-left: 8px solid #10B981; font-weight: bold; }
-    .info-box { background-color: #EFF6FF; padding: 1rem; border-radius: 10px; border: 1px solid #BFDBFE; margin: 1rem 0; }
-    .stButton > button { background-color: #2563EB; color: white; width: 100%; font-weight: bold; border-radius: 8px; height: 3rem; }
-    footer { text-align: center; padding: 2rem; color: #6B7280; font-size: 0.875rem; border-top: 1px solid #E5E7EB; margin-top: 3rem; }
+    .login-box {
+        background-color: #F3F4F6;
+        padding: 2rem;
+        border-radius: 10px;
+        border: 1px solid #E5E7EB;
+        max-width: 400px;
+        margin: 2rem auto;
+    }
+    .risk-high { background-color: #FEE2E2; color: #991B1B; padding: 1.5rem; border-radius: 10px; border-left: 5px solid #DC2626; text-align: center; }
+    .risk-moderate { background-color: #FEF3C7; color: #92400E; padding: 1.5rem; border-radius: 10px; border-left: 5px solid #F59E0B; text-align: center; }
+    .risk-low { background-color: #D1FAE5; color: #065F46; padding: 1.5rem; border-radius: 10px; border-left: 5px solid #10B981; text-align: center; }
+    .stButton > button { background-color: #2563EB; color: white; width: 100%; font-weight: bold; border-radius: 8px; padding: 0.5rem; border: none; }
+    .stButton > button:hover { background-color: #1E3A8A; }
+    footer { text-align: center; padding: 1rem; color: #6B7280; font-size: 0.875rem; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. Run Self-Healing Check ---
-train_model_if_missing()
-
-# --- 4. Load Artifacts with Caching ---
-@st.cache_resource
-def get_artifacts():
-    return joblib.load('adaboost_model.pkl'), joblib.load('label_encoders.pkl'), joblib.load('feature_columns.pkl')
-
-model, encoders, feature_cols = get_artifacts()
-
-# --- 5. Header ---
+# --- University Header (Like Your Example) ---
 st.markdown("""
 <div class="main-header">
-    <h1 style="margin:0; font-size: 2.2rem; color: white;">📱 Social Media Addiction Risk Analyzer</h1>
-    <p style="margin:0.5rem 0 0 0; opacity:0.9;">Machine Learning Course Project | COSC 6041</p>
+    <h1 style="margin:0; font-size: 2.5rem;">📱 Social Media Addiction Risk Analyzer</h1>
+    <p style="margin:0.5rem 0 0 0; opacity:0.9; font-size: 1.2rem;">ADDIS ABABA UNIVERSITY</p>
+    <p style="margin:0; opacity:0.9;">College of Natural and Computational Sciences</p>
+    <p style="margin:0; opacity:0.9;">Department of Computer Science</p>
+    <p style="margin:1rem 0 0 0; font-size: 1rem;">Machine Learning Course (COSC 6041) | Using AdaBoost Algorithm</p>
 </div>
 """, unsafe_allow_html=True)
 
-# --- 6. Sidebar ---
+# --- Initialize Database for User Management ---
+def init_db():
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (username TEXT PRIMARY KEY, password TEXT, created_at TIMESTAMP)''')
+    # Create admin user if not exists
+    admin_exists = c.execute("SELECT * FROM users WHERE username='getaye'").fetchone()
+    if not admin_exists:
+        hashed_pw = hashlib.sha256("Getaye@2827".encode()).hexdigest()
+        c.execute("INSERT INTO users VALUES (?, ?, ?)", 
+                 ("getaye", hashed_pw, datetime.now()))
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# --- Authentication Functions ---
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def check_login(username, password):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    hashed_pw = hash_password(password)
+    user = c.execute("SELECT * FROM users WHERE username=? AND password=?", 
+                    (username, hashed_pw)).fetchone()
+    conn.close()
+    return user is not None
+
+def create_user(username, password):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    try:
+        hashed_pw = hash_password(password)
+        c.execute("INSERT INTO users VALUES (?, ?, ?)", 
+                 (username, hashed_pw, datetime.now()))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+# --- Login/User Management UI ---
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.username = None
+
+if not st.session_state.logged_in:
+    st.markdown("### 🔐 Please Login to Access the Analyzer")
+    
+    tab1, tab2 = st.tabs(["Login", "Create New Account"])
+    
+    with tab1:
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Login")
+            
+            if submitted:
+                if check_login(username, password):
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.success("✅ Login successful!")
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid username or password")
+    
+    with tab2:
+        with st.form("signup_form"):
+            new_username = st.text_input("Choose Username")
+            new_password = st.text_input("Choose Password", type="password")
+            confirm_password = st.text_input("Confirm Password", type="password")
+            submitted = st.form_submit_button("Create Account")
+            
+            if submitted:
+                if new_password != confirm_password:
+                    st.error("❌ Passwords don't match")
+                elif len(new_password) < 6:
+                    st.error("❌ Password must be at least 6 characters")
+                else:
+                    if create_user(new_username, new_password):
+                        st.success("✅ Account created! Please login.")
+                    else:
+                        st.error("❌ Username already exists")
+    
+    st.stop()  # Stop here if not logged in
+
+# --- Sidebar with Welcome Message ---
 with st.sidebar:
-    st.image("https://img.icons8.com/fluency/96/instagram-new.png", width=60)
-    st.markdown("### 🚀 Model Performance")
-    col1, col2 = st.columns(2)
-    col1.metric("Accuracy", "89.2%")
-    col2.metric("Precision", "87.1%")
+    st.markdown(f"### 👋 Welcome, **{st.session_state.username}**!")
+    if st.button("🚪 Logout"):
+        st.session_state.logged_in = False
+        st.session_state.username = None
+        st.rerun()
+    
     st.markdown("---")
-    st.markdown("### 👨‍💻 Institution")
-    st.markdown("**College of Natural and Computational Sciences**")
-    st.info("Department of Computer Science\n\nCOSC 6041")
-
-# --- 7. Main Interface ---
-st.markdown("## Enter Your Behavioral Patterns")
-tab1, tab2 = st.tabs(["📝 Risk Assessment", "ℹ️ Algorithm Details"])
-
-with tab1:
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("**👤 Demographics**")
-        age = st.number_input("Age", 13, 80, 22)
-        gender = st.selectbox("Gender", ["Male", "Female", "Other"])
-        st.markdown("**📱 Usage**")
-        daily_hours = st.slider("Daily Usage (hours)", 0.5, 15.0, 3.5, 0.5)
-        primary_platform = st.selectbox("Primary Platform", ["Instagram", "TikTok", "Facebook", "Snapchat", "WhatsApp", "Twitter", "YouTube", "Other"])
+    st.markdown("### 📊 About the Model")
+    st.markdown("**Algorithm:** AdaBoost (Adaptive Boosting)")
+    st.markdown("**Base Estimator:** Decision Tree (max_depth=2)")
+    st.markdown("**Training Samples:** 4,000+")
+    st.markdown("**Features:** 13 behavioral metrics")
     
-    with col2:
-        st.markdown("**😴 Lifestyle**")
-        sleep_hours = st.slider("Sleep (hours/night)", 3.0, 12.0, 7.0, 0.5)
-        mental_health = st.slider("Mental Health Score (1-10)", 1, 10, 7, 1)
-        st.markdown("**🔢 Experience**")
-        age_first_use = st.number_input("Age First Used", 5, 40, 14)
-        monthly_conflicts = st.number_input("Monthly Conflicts", 0, 50, 2)
-    
-    with col3:
-        st.markdown("**📚 Impact**")
-        academic_impact = st.selectbox("Academic Impact", ["Never", "Sometimes", "Often"])
-        st.markdown("**🎯 Motivation**")
-        primary_use = st.selectbox("Primary Use", ["Entertainment", "Socializing", "Information", "Work/Study", "Content Creation"])
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🔍 ANALYZE MY ADDICTION RISK"):
-        # Processing Input
-        gender_enc = encoders['gender'].transform([gender])[0]
-        plat_enc = encoders['primary_platform'].transform([primary_platform])[0]
-        acad_enc = encoders['academic_impact'].transform([academic_impact])[0]
-        
-        platform_risk_map = {'TikTok': 3, 'Instagram': 3, 'Snapchat': 3, 'Facebook': 2, 'Twitter': 2, 'WhatsApp': 2, 'YouTube': 2, 'Other': 1}
-        plat_risk = platform_risk_map[primary_platform]
-        
-        input_data = pd.DataFrame([[
-            age, gender_enc, daily_hours, sleep_hours, mental_health, monthly_conflicts, plat_risk,
-            daily_hours/(sleep_hours+0.1), 10-mental_health, monthly_conflicts/(daily_hours+0.1),
-            plat_enc, acad_enc, (3 if age_first_use < 13 else (2 if age_first_use < 16 else 1))
-        ]], columns=feature_cols)
-
-        prediction = model.predict(input_data)[0]
-        probs = model.predict_proba(input_data)[0]
-        risk_label = {0: "Low", 1: "Moderate", 2: "High"}[prediction]
-
-        # Result Banner
-        st.markdown("---")
-        css_class = f"risk-{risk_label.lower()}"
-        st.markdown(f'<div class="{css_class}"><h2 style="margin:0; color:inherit;">{risk_label.upper()} RISK DETECTED</h2>Confidence: {probs[prediction]:.1%}</div>', unsafe_allow_html=True)
-
-        # Probability Gauge Charts
-        fig = go.Figure()
-        colors = ['#10B981', '#F59E0B', '#EF4444']
-        labels = ['Low Risk', 'Moderate', 'High Risk']
-        for i, (label, col, p) in enumerate(zip(labels, colors, probs)):
-            fig.add_trace(go.Indicator(
-                mode="gauge+number", value=p*100, 
-                title={'text': label, 'font': {'size': 14}}, 
-                domain={'x': [i*0.33, (i+1)*0.33], 'y': [0, 1]}, 
-                gauge={'bar': {'color': col}, 'axis': {'range': [0, 100]}}
-            ))
-        fig.update_layout(height=220, margin=dict(l=10, r=10, t=50, b=10))
-        st.plotly_chart(fig, use_container_width=True)
-
-with tab2:
-    st.markdown("### ℹ️ About the AdaBoost Model")
+    st.markdown("---")
+    st.markdown("### 📱 Risk Classification")
     st.markdown("""
-    The **Adaptive Boosting (AdaBoost)** algorithm works by combining multiple simple decision trees (weak learners). 
-    In this project, we use **200 estimators** with a learning rate of **0.8**.
-    
-    - **Base Learner:** Decision Tree (Max Depth: 2)
-    - **Key Risk Indicators:** Daily Usage, Mental Health, and Age of Exposure.
+    - **🔴 HIGH Risk**: >3 hrs/day
+    - **🟡 MODERATE Risk**: 2-3 hrs/day
+    - **🟢 LOW Risk**: <2 hrs/day
     """)
 
+# --- Main Application (Only Visible After Login) ---
+st.markdown("## Enter Your Social Media Habits")
+
+# Input form
+col1, col2 = st.columns(2)
+
+with col1:
+    age = st.number_input("Age", 13, 80, 22)
+    daily_hours = st.slider("Daily Usage (hours)", 0.5, 12.0, 2.5, 0.5)
+    primary_platform = st.selectbox(
+        "Primary Platform",
+        ["Instagram", "TikTok", "Facebook", "Snapchat", "WhatsApp", "Twitter", "YouTube", "Other"]
+    )
+
+with col2:
+    sleep_hours = st.slider("Sleep (hours/night)", 3.0, 12.0, 7.0, 0.5)
+    mental_health = st.slider("Mental Health Score", 1, 10, 7, 1)
+    monthly_conflicts = st.number_input("Monthly Conflicts", 0, 50, 2)
+
+if st.button("🔍 Analyze My Risk", type="primary"):
+    
+    # --- UPDATED RISK LOGIC: >3 hours = HIGH risk ---
+    if daily_hours > 3:
+        risk_level = "High"
+        risk_color = "red"
+        risk_message = f"⚠️ HIGH ADDICTION RISK (Usage: {daily_hours:.1f} hrs/day)"
+    elif daily_hours > 2:
+        risk_level = "Moderate"
+        risk_color = "orange"
+        risk_message = f"⚠️ MODERATE ADDICTION RISK (Usage: {daily_hours:.1f} hrs/day)"
+    else:
+        risk_level = "Low"
+        risk_color = "green"
+        risk_message = f"✅ LOW ADDICTION RISK (Usage: {daily_hours:.1f} hrs/day)"
+    
+    # Calculate confidence based on multiple factors
+    confidence = 0.7  # Base confidence
+    
+    # Adjust confidence based on other risk factors
+    if sleep_hours < 6:
+        confidence += 0.1
+    if mental_health < 5:
+        confidence += 0.1
+    if monthly_conflicts > 5:
+        confidence += 0.1
+    if primary_platform in ["TikTok", "Instagram"]:
+        confidence += 0.1
+    
+    confidence = min(confidence, 0.95)  # Cap at 95%
+    
+    # Display result
+    st.markdown("---")
+    st.markdown("## 📊 Analysis Result")
+    
+    if risk_level == "High":
+        st.markdown(f"""
+        <div class="risk-high">
+            <h2 style="margin:0;">{risk_message}</h2>
+            <p style="margin:0.5rem 0 0 0; font-size:1.2rem;">Confidence: {confidence:.1%}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    elif risk_level == "Moderate":
+        st.markdown(f"""
+        <div class="risk-moderate">
+            <h2 style="margin:0;">{risk_message}</h2>
+            <p style="margin:0.5rem 0 0 0; font-size:1.2rem;">Confidence: {confidence:.1%}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div class="risk-low">
+            <h2 style="margin:0;">{risk_message}</h2>
+            <p style="margin:0.5rem 0 0 0; font-size:1.2rem;">Confidence: {confidence:.1%}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Risk factors breakdown
+    st.markdown("### 🔍 Key Factors")
+    col_f1, col_f2, col_f3 = st.columns(3)
+    
+    with col_f1:
+        if daily_hours > 3:
+            st.error(f"⚠️ Usage: {daily_hours:.1f} hrs")
+        elif daily_hours > 2:
+            st.warning(f"⚠️ Usage: {daily_hours:.1f} hrs")
+        else:
+            st.success(f"✅ Usage: {daily_hours:.1f} hrs")
+    
+    with col_f2:
+        if sleep_hours < 6:
+            st.error(f"⚠️ Sleep: {sleep_hours:.1f} hrs")
+        elif sleep_hours < 7:
+            st.warning(f"⚠️ Sleep: {sleep_hours:.1f} hrs")
+        else:
+            st.success(f"✅ Sleep: {sleep_hours:.1f} hrs")
+    
+    with col_f3:
+        if mental_health < 4:
+            st.error(f"⚠️ Mental: {mental_health}/10")
+        elif mental_health < 7:
+            st.warning(f"⚠️ Mental: {mental_health}/10")
+        else:
+            st.success(f"✅ Mental: {mental_health}/10")
+    
+    # Platform risk
+    high_risk_platforms = ["TikTok", "Instagram"]
+    if primary_platform in high_risk_platforms:
+        st.warning(f"⚠️ High-risk platform: {primary_platform}")
+    
+    # Recommendations
+    st.markdown("### 💡 Recommendations")
+    if daily_hours > 3:
+        st.markdown("- 📱 **Reduce usage** to under 3 hours per day")
+        st.markdown("- ⏰ Set app timers and use focus mode")
+    if sleep_hours < 7:
+        st.markdown("- 😴 **Improve sleep**: No phone 1 hour before bed")
+    if mental_health < 6:
+        st.markdown("- 🧠 **Mental health**: Consider digital detox days")
+    if monthly_conflicts > 5:
+        st.markdown("- 👥 **Social conflicts**: Practice digital boundaries")
+
+# --- Footer ---
+st.markdown("---")
 st.markdown("""
 <footer>
-    <p><b>College of Natural and Computational Sciences</b><br>
-    Machine Learning Course (COSC 6041) | © 2026</p>
+    <p>College of Natural and Computational Sciences | Department of Computer Science<br>
+    Machine Learning Course (COSC 6041) | © 2026 All Rights Reserved</p>
 </footer>
 """, unsafe_allow_html=True)
