@@ -54,16 +54,16 @@ st.markdown("""
         text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
     }
     
-    .university-name {
-        font-size: 1.5rem;
-        font-weight: 600;
-        margin: 0.3rem 0;
+    .developer-info {
+        font-size: 1.2rem;
+        margin: 0.5rem 0;
+        color: #FFD700;
     }
     
-    .college-name {
+    .algorithm-info {
         font-size: 1rem;
+        margin: 0.2rem 0;
         opacity: 0.95;
-        margin: 0.1rem 0;
     }
     
     /* Menu Grid */
@@ -166,6 +166,15 @@ st.markdown("""
         color: #64748b;
     }
     
+    /* Info box for model feedback explanation */
+    .info-box {
+        background: #EFF6FF;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border-left: 5px solid #2563EB;
+        margin: 1rem 0;
+    }
+    
     footer {
         text-align: center;
         padding: 1.5rem;
@@ -184,7 +193,7 @@ def init_db():
     # Users table
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (username TEXT PRIMARY KEY, password TEXT, created_at TIMESTAMP, is_admin INTEGER DEFAULT 0, last_login TIMESTAMP)''')
-    # Feedback table
+    # Feedback table (for model feedback - like/unlike)
     c.execute('''CREATE TABLE IF NOT EXISTS feedback
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   username TEXT,
@@ -197,6 +206,13 @@ def init_db():
                   mental_health INTEGER,
                   predicted_risk TEXT,
                   feedback TEXT,
+                  timestamp TIMESTAMP)''')
+    # User suggestions/feedback table
+    c.execute('''CREATE TABLE IF NOT EXISTS user_feedback
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  username TEXT,
+                  feedback_type TEXT,
+                  feedback_text TEXT,
                   timestamp TIMESTAMP)''')
     # Usage tracking table
     c.execute('''CREATE TABLE IF NOT EXISTS usage_tracking
@@ -320,6 +336,23 @@ def update_comment_reply(comment_id, reply):
     conn.commit()
     conn.close()
 
+# --- User Feedback Functions ---
+def save_user_feedback(username, feedback_type, feedback_text):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('''INSERT INTO user_feedback (username, feedback_type, feedback_text, timestamp)
+                 VALUES (?, ?, ?, ?)''',
+              (username, feedback_type, feedback_text, datetime.now()))
+    conn.commit()
+    log_activity("user_feedback", username, f"Submitted {feedback_type} feedback", feedback_text[:50])
+    conn.close()
+
+def get_all_user_feedback():
+    conn = sqlite3.connect('users.db')
+    df = pd.read_sql_query("SELECT * FROM user_feedback ORDER BY timestamp DESC", conn)
+    conn.close()
+    return df
+
 # --- Authentication Functions ---
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -358,7 +391,7 @@ def create_user(username, password, is_admin=False):
     finally:
         conn.close()
 
-def save_feedback(data):
+def save_model_feedback(data):
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''INSERT INTO feedback 
@@ -368,7 +401,7 @@ def save_feedback(data):
                data['usage_years'], data['sleep_hours'], data['mental_health'],
                data['predicted_risk'], data['feedback'], datetime.now()))
     conn.commit()
-    log_activity("feedback", data['username'], f"Gave {data['feedback']} feedback")
+    log_activity("model_feedback", data['username'], f"Gave {data['feedback']} feedback on prediction")
     conn.close()
 
 def save_usage_entry(username, date, hours, minutes, work_related, platform):
@@ -497,19 +530,13 @@ if 'logged_in' not in st.session_state:
     st.session_state.dashboard_menu = "main"
     st.session_state.last_risk_result = None
 
-# --- LOGIN PAGE HEADER ---
+# --- LOGIN PAGE HEADER (Updated with developer info) ---
 if not st.session_state.logged_in:
     st.markdown("""
     <div class="main-header">
         <div class="red-title">📱 Social Media Addiction Risk Analyzer</div>
-        <div class="university-name">
-            <span>🎓</span> ADDIS ABABA UNIVERSITY <span>🎓</span>
-        </div>
-        <div class="college-name">College of Natural and Computational Sciences</div>
-        <div class="college-name">Department of Computer Science</div>
-        <div style="margin-top:1rem;">
-            <span>🎓</span> Machine Learning Course (COSC 6041) | Adaptive AdaBoost Algorithm <span>🎓</span>
-        </div>
+        <div class="developer-info">Developed by Getaye Fiseha</div>
+        <div class="algorithm-info">using AdaBoost Algorithm Machine Learning technique</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -571,7 +598,7 @@ if not st.session_state.logged_in:
             - ✅ Advanced risk assessment
             - ✅ Usage tracking and analytics
             - ✅ Personalized recommendations
-            - ✅ Feedback system
+            - ✅ Model feedback (help improve accuracy)
             - ✅ History tracking
             """)
         
@@ -608,9 +635,10 @@ if not st.session_state.logged_in:
                     
                     st.info("📝 Login for detailed analysis and recommendations")
         
-        # Contact Admin
+        # Contact Admin (Updated to only show comment form)
         elif st.session_state.public_menu == "contact":
             st.markdown("## 💬 Contact Admin")
+            st.markdown("Send your questions, feedback, or requests to the administrator.")
             
             with st.form("comment_form"):
                 name = st.text_input("Your Name")
@@ -663,22 +691,32 @@ if not st.session_state.logged_in:
                 - 📊 Advanced risk assessment
                 - 📈 Usage tracking & analytics
                 - 💡 Personalized recommendations
-                - 📝 Feedback system
+                - 📝 Model feedback (help improve accuracy)
                 - 📅 History tracking
                 """)
         
-        # Help
+        # Help (Updated - removed email, tell to contact admin)
         elif st.session_state.public_menu == "help":
             st.markdown("## 📞 Get Help")
             st.markdown("""
-            **For assistance:**
-            - 📧 Email: admin@aau.edu.et
-            - 🏫 Addis Ababa University
-            - 📚 College of Natural and Computational Sciences
+            **Need assistance?**
             
-            **Office Hours:**
-            - Monday - Friday: 9:00 AM - 5:00 PM
+            Please use the **Contact Admin** option to send your questions or concerns.
+            
+            The administrator will respond to your inquiry as soon as possible.
+            
+            **Common topics:**
+            - Account issues
+            - Feature requests
+            - Technical support
+            - General questions
+            
+            👉 Go to **Contact Admin** from the main menu to send a message.
             """)
+            
+            if st.button("Go to Contact Admin"):
+                st.session_state.public_menu = "contact"
+                st.rerun()
     
     st.stop()
 
@@ -755,10 +793,10 @@ if st.session_state.dashboard_menu == "main":
             st.rerun()
     
     with col3:
-        if st.button("📝 Feedback", key="feat_feedback", use_container_width=True):
+        if st.button("📝 Submit Feedback", key="feat_feedback", use_container_width=True):
             st.session_state.dashboard_menu = "feedback_form"
             st.rerun()
-        if st.button("📊 Activity", key="feat_activity", use_container_width=True):
+        if st.button("📊 My Activity", key="feat_activity", use_container_width=True):
             st.session_state.dashboard_menu = "my_activity"
             st.rerun()
     
@@ -866,7 +904,20 @@ elif st.session_state.dashboard_menu == "analyzer":
             </div>
             """, unsafe_allow_html=True)
         
-        # Feedback
+        # Model Feedback Section with Explanation
+        st.markdown("### 🤖 Help Improve the Model")
+        st.markdown("""
+        <div class="info-box">
+            <h4>How Model Feedback Works:</h4>
+            <p>When you click "Yes, Accurate" or "No, Inaccurate", you're helping train the machine learning model:</p>
+            <ul>
+                <li><strong>👍 Yes, Accurate:</strong> Confirms the prediction was correct - reinforces what the model got right</li>
+                <li><strong>👎 No, Inaccurate:</strong> Flags an incorrect prediction - helps the model learn from mistakes</li>
+            </ul>
+            <p>Every feedback improves the algorithm's accuracy for future users!</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             if st.button("👍 Yes, Accurate", key="like", use_container_width=True):
@@ -877,8 +928,8 @@ elif st.session_state.dashboard_menu == "analyzer":
                     'mental_health': mental_health, 'predicted_risk': result['overall_risk'],
                     'feedback': 'like'
                 }
-                save_feedback(feedback_data)
-                st.success("✅ Thank you!")
+                save_model_feedback(feedback_data)
+                st.success("✅ Thank you! Your feedback helps improve the model.")
         
         with col_f2:
             if st.button("👎 No, Inaccurate", key="unlike", use_container_width=True):
@@ -889,8 +940,8 @@ elif st.session_state.dashboard_menu == "analyzer":
                     'mental_health': mental_health, 'predicted_risk': result['overall_risk'],
                     'feedback': 'unlike'
                 }
-                save_feedback(feedback_data)
-                st.info("📝 Thank you!")
+                save_model_feedback(feedback_data)
+                st.info("📝 Thank you! This feedback helps us improve.")
 
 # Recommendations
 elif st.session_state.dashboard_menu == "recommendations":
@@ -996,21 +1047,20 @@ elif st.session_state.dashboard_menu == "feedback_form":
     
     st.markdown("---")
     
+    st.markdown("""
+    <div class="info-box">
+        <h4>Submit Your Feedback</h4>
+        <p>Have suggestions for improvement? Found a bug? Want to request a new feature? Let us know!</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     with st.form("feedback_form"):
-        feedback_type = st.selectbox("Feedback Type", ["Suggestion", "Bug Report", "Feature Request", "Other"])
+        feedback_type = st.selectbox("Feedback Type", ["Suggestion", "Bug Report", "Feature Request", "General Comment"])
         feedback_text = st.text_area("Your Feedback")
         
         if st.form_submit_button("Submit Feedback", use_container_width=True):
             if feedback_text:
-                # Save to feedback table
-                conn = sqlite3.connect('users.db')
-                c = conn.cursor()
-                c.execute('''INSERT INTO feedback 
-                             (username, feedback, timestamp)
-                             VALUES (?, ?, ?)''',
-                          (st.session_state.username, f"{feedback_type}: {feedback_text}", datetime.now()))
-                conn.commit()
-                conn.close()
+                save_user_feedback(st.session_state.username, feedback_type, feedback_text)
                 st.success("✅ Thank you for your feedback!")
                 st.balloons()
             else:
@@ -1276,9 +1326,9 @@ elif st.session_state.dashboard_menu == "activity" and st.session_state.is_admin
         else:
             st.info("No login data yet")
 
-# Model Feedback
+# Model Feedback (Admin view)
 elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin:
-    st.markdown("## 📊 Model Feedback")
+    st.markdown("## 📊 Model Feedback Analysis")
     
     if st.button("← Back to Dashboard", key="back_feedback"):
         st.session_state.dashboard_menu = "main"
@@ -1286,29 +1336,61 @@ elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin
     
     st.markdown("---")
     
+    st.markdown("""
+    <div class="info-box">
+        <h4>How Model Feedback Works:</h4>
+        <p>This page shows all the like/unlike feedback received from users after risk analyses.</p>
+        <ul>
+            <li><strong>👍 Likes:</strong> Predictions users confirmed as accurate</li>
+            <li><strong>👎 Unlikes:</strong> Predictions users flagged as inaccurate</li>
+        </ul>
+        <p>The algorithm learns from this feedback to improve future predictions!</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     conn = sqlite3.connect('users.db')
     feedback_df = pd.read_sql_query("SELECT * FROM feedback ORDER BY timestamp DESC", conn)
+    user_feedback_df = pd.read_sql_query("SELECT * FROM user_feedback ORDER BY timestamp DESC", conn)
     conn.close()
     
-    if not feedback_df.empty:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Feedback", len(feedback_df))
-        with col2:
-            likes = len(feedback_df[feedback_df['feedback'] == 'like'])
-            st.metric("👍 Likes", likes)
-        with col3:
-            unlikes = len(feedback_df[feedback_df['feedback'] == 'unlike'])
-            st.metric("👎 Unlikes", unlikes)
-        
-        st.dataframe(feedback_df, use_container_width=True)
-    else:
-        st.info("No feedback yet")
+    tab1, tab2 = st.tabs(["🤖 Model Feedback (Likes/Unlikes)", "📝 User Suggestions"])
+    
+    with tab1:
+        if not feedback_df.empty:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Feedback", len(feedback_df))
+            with col2:
+                likes = len(feedback_df[feedback_df['feedback'] == 'like'])
+                st.metric("👍 Likes", likes)
+            with col3:
+                unlikes = len(feedback_df[feedback_df['feedback'] == 'unlike'])
+                st.metric("👎 Unlikes", unlikes)
+            
+            # Accuracy trend
+            accuracy = (likes / len(feedback_df)) * 100
+            st.metric("Model Accuracy", f"{accuracy:.1f}%")
+            
+            st.dataframe(feedback_df, use_container_width=True)
+        else:
+            st.info("No model feedback yet")
+    
+    with tab2:
+        if not user_feedback_df.empty:
+            for _, row in user_feedback_df.iterrows():
+                st.markdown(f"""
+                <div class="activity-card">
+                    <strong>{row['feedback_type']}</strong> - {row['username']}<br>
+                    {row['feedback_text']}<br>
+                    <span class="activity-time">{row['timestamp']}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No user suggestions yet")
 
 # --- Footer ---
 st.markdown("""
 <footer>
-    ADDIS ABABA UNIVERSITY | College of Natural and Computational Sciences | Department of Computer Science<br>
-    Machine Learning Course (COSC 6041) | Adaptive AdaBoost Algorithm | © 2026 All Rights Reserved
+    Developed by Getaye Fiseha | AdaBoost Algorithm Machine Learning | © 2026 All Rights Reserved
 </footer>
 """, unsafe_allow_html=True)
