@@ -1,18 +1,30 @@
+---
+title: Social Media Addiction Risk Analyzer
+emoji: 📱
+colorFrom: blue
+colorTo: indigo
+sdk: streamlit
+sdk_version: 1.31.0
+app_file: app.py
+pinned: false
+---
+
 # 📱 Social Media Addiction Risk Analyzer with AdaBoost
 
-[![Hugging Face Spaces](https://img.shields.io/badge/🤗%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/yourusername/social-media-addiction-analyzer)
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-black)](https://github.com/yourusername/social-media-addiction-analyzer)
+[![Sync to Hugging Face](https://github.com/Getaye/social-media-addiction-analyzer/actions/workflows/deploy.yml/badge.svg)](https://github.com/Getaye/social-media-addiction-analyzer/actions)
+[![Hugging Face Spaces](https://img.shields.io/badge/🤗%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/Getaye/social-media-addiction-analyzer)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-black)](https://github.com/Getaye/social-media-addiction-analyzer)
 
 **Machine Learning Course Project | COSC 6041 | College of Natural and Computational Sciences**
 
 A production-ready web application that uses the **AdaBoost (Adaptive Boosting) algorithm** to predict social media addiction risk based on behavioral patterns. The model analyzes factors like daily usage, sleep patterns, mental health, and platform choice to classify users into **Low**, **Moderate**, or **High** risk categories.
 
-![Demo Screenshot](screenshot.png) *(Add a screenshot of your app here)*
+
 
 ## 🚀 Live Demo
 
 Try the live application on Hugging Face Spaces:  
-[![Hugging Face Space](https://img.shields.io/badge/🤗%20Open%20in%20Spaces-blue)](https://huggingface.co/spaces/yourusername/social-media-addiction-analyzer)
+[![Hugging Face Space](https://img.shields.io/badge/🤗%20Open%20in%20Spaces-blue)](https://huggingface.co/spaces/Getaye/social-media-addiction-analyzer)
 
 ## ✨ Key Features
 
@@ -41,6 +53,8 @@ Try the live application on Hugging Face Spaces:
 4. Sleep Hours
 5. Age of First Use
 
+
+
 ## 🛠️ Technical Stack
 
 - **Frontend**: Streamlit
@@ -50,3 +64,14 @@ Try the live application on Hugging Face Spaces:
 - **Deployment**: Hugging Face Spaces / GitHub
 
 ## 📁 Project Structure
+
+```text
+.
+├── .github/workflows/deploy.yml  # Auto-sync to HF
+├── app.py                       # Streamlit Application
+├── model/
+│   └── adaboost_model.pkl       # Trained Model File
+├── data/
+│   └── processed_data.csv       # Training Data
+├── requirements.txt             # Dependencies
+└── README.md                    # Project Documentation
