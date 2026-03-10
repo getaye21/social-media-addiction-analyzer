@@ -77,6 +77,18 @@ st.markdown("""
         text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
     }
     
+    .university-name {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 0.3rem 0;
+    }
+    
+    .college-name {
+        font-size: 1rem;
+        opacity: 0.95;
+        margin: 0.1rem 0;
+    }
+    
     /* Feature container */
     .feature-container {
         background: white;
@@ -192,6 +204,16 @@ st.markdown("""
         border-radius: 10px;
         border: 1px solid #e2e8f0;
         margin: 1rem 0;
+    }
+    
+    /* Metric cards */
+    .metric-card {
+        background: white;
+        padding: 1rem;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        border: 1px solid #E5E7EB;
     }
     
     footer {
@@ -527,7 +549,7 @@ if not st.session_state.logged_in:
         st.markdown("## 👋 Welcome to Social Media Addiction Risk Analyzer")
         
         # Public features grid
-        st.markadowne('<div class="public-grid">', unsafe_allow_html=True)
+        st.markdown('<div class="public-grid">', unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns(3)
         
@@ -776,14 +798,15 @@ if st.session_state.logged_in_feature == "dashboard" or st.session_state.logged_
     conn = sqlite3.connect('users.db')
     usage_count = pd.read_sql_query(f"SELECT COUNT(*) as count FROM usage_tracking WHERE username='{st.session_state.username}'", conn).iloc[0]['count']
     feedback_count = pd.read_sql_query(f"SELECT COUNT(*) as count FROM feedback WHERE username='{st.session_state.username}'", conn).iloc[0]['count']
+    risk_count = pd.read_sql_query(f"SELECT COUNT(*) as count FROM risk_analyses WHERE username='{st.session_state.username}'", conn).iloc[0]['count']
     conn.close()
     
     with col1:
         st.metric("Usage Entries", usage_count)
     with col2:
-        st.metric("Feedback Given", feedback_count)
+        st.metric("Risk Analyses", risk_count)
     with col3:
-        st.metric("Member Since", datetime.now().strftime("%b %Y"))
+        st.metric("Feedback Given", feedback_count)
 
 # Profile
 elif st.session_state.logged_in_feature == "profile":
