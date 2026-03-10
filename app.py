@@ -35,29 +35,6 @@ st.markdown("""
         margin-bottom: 1rem;
     }
     
-    .sidebar-button {
-        width: 100%;
-        padding: 1rem;
-        margin: 0.2rem 0;
-        border-radius: 10px;
-        border: none;
-        background: #f8fafc;
-        cursor: pointer;
-        text-align: left;
-        font-size: 1rem;
-        transition: all 0.3s;
-    }
-    
-    .sidebar-button:hover {
-        background: #e0f2fe;
-        transform: translateX(5px);
-    }
-    
-    .sidebar-button.active {
-        background: #2563EB;
-        color: white;
-    }
-    
     /* Main header */
     .main-header {
         background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 50%, #1E3A8A 100%);
@@ -89,6 +66,41 @@ st.markdown("""
         margin: 0.1rem 0;
     }
     
+    /* Menu Grid */
+    .menu-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin: 2rem 0;
+    }
+    
+    .menu-card {
+        background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+        padding: 1.5rem;
+        border-radius: 10px;
+        border: 2px solid #e2e8f0;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .menu-card:hover {
+        transform: translateY(-5px);
+        border-color: #2563EB;
+        box-shadow: 0 10px 25px rgba(37, 99, 235, 0.2);
+    }
+    
+    .menu-icon {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .menu-title {
+        font-weight: bold;
+        color: #1E3A8A;
+        font-size: 1.1rem;
+    }
+    
     /* Feature container */
     .feature-container {
         background: white;
@@ -96,50 +108,7 @@ st.markdown("""
         border-radius: 15px;
         border: 1px solid #e2e8f0;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        min-height: 500px;
-        position: relative;
-    }
-    
-    .back-button {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        background: #2563EB;
-        color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
-        cursor: pointer;
-        border: none;
-        font-size: 0.9rem;
-        z-index: 100;
-    }
-    
-    .back-button:hover {
-        background: #1E3A8A;
-    }
-    
-    /* Public cards grid */
-    .public-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 1rem;
-        margin: 2rem 0;
-    }
-    
-    .public-card {
-        background: linear-gradient(135deg, #f8fafc, #f1f5f9);
-        padding: 2rem 1rem;
-        border-radius: 15px;
-        border: 2px solid #e2e8f0;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.3s;
-    }
-    
-    .public-card:hover {
-        transform: translateY(-5px);
-        border-color: #2563EB;
-        box-shadow: 0 10px 25px rgba(37, 99, 235, 0.2);
+        min-height: 600px;
     }
     
     /* Risk displays */
@@ -197,25 +166,6 @@ st.markdown("""
         color: #64748b;
     }
     
-    /* Comment box */
-    .comment-box {
-        background: white;
-        padding: 1rem;
-        border-radius: 10px;
-        border: 1px solid #e2e8f0;
-        margin: 1rem 0;
-    }
-    
-    /* Metric cards */
-    .metric-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 10px;
-        text-align: center;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        border: 1px solid #E5E7EB;
-    }
-    
     footer {
         text-align: center;
         padding: 1.5rem;
@@ -240,6 +190,7 @@ def init_db():
                   username TEXT,
                   age INTEGER,
                   daily_hours REAL,
+                  work_related INTEGER,
                   platform TEXT,
                   usage_years REAL,
                   sleep_hours REAL,
@@ -255,6 +206,7 @@ def init_db():
                   hours INTEGER,
                   minutes INTEGER,
                   total_minutes INTEGER,
+                  work_related INTEGER,
                   platform TEXT,
                   timestamp TIMESTAMP)''')
     # Comments table
@@ -282,6 +234,7 @@ def init_db():
                   username TEXT,
                   age INTEGER,
                   daily_hours REAL,
+                  work_related INTEGER,
                   start_year INTEGER,
                   platform TEXT,
                   sleep_hours REAL,
@@ -310,16 +263,16 @@ def log_activity(activity_type, username, description, details=None):
     conn.commit()
     conn.close()
 
-def log_risk_analysis(username, age, daily_hours, start_year, platform, sleep_hours, mental_health, risk_result):
+def log_risk_analysis(username, age, daily_hours, work_related, start_year, platform, sleep_hours, mental_health, risk_result):
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''INSERT INTO risk_analyses 
-                 (username, age, daily_hours, start_year, platform, sleep_hours, mental_health, risk_result, timestamp)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-              (username, age, daily_hours, start_year, platform, sleep_hours, mental_health, risk_result, datetime.now()))
+                 (username, age, daily_hours, work_related, start_year, platform, sleep_hours, mental_health, risk_result, timestamp)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+              (username, age, daily_hours, work_related, start_year, platform, sleep_hours, mental_health, risk_result, datetime.now()))
     conn.commit()
     conn.close()
-    log_activity("risk_analysis", username, f"Performed risk analysis: {risk_result}", f"Age:{age}, Hours:{daily_hours}, Platform:{platform}")
+    log_activity("risk_analysis", username, f"Performed risk analysis: {risk_result}", f"Age:{age}, Hours:{daily_hours}, Work:{work_related}, Platform:{platform}")
 
 def get_all_activities(limit=100):
     conn = sqlite3.connect('users.db')
@@ -409,32 +362,32 @@ def save_feedback(data):
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''INSERT INTO feedback 
-                 (username, age, daily_hours, platform, usage_years, sleep_hours, mental_health, predicted_risk, feedback, timestamp)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-              (data['username'], data['age'], data['daily_hours'], data['platform'],
+                 (username, age, daily_hours, work_related, platform, usage_years, sleep_hours, mental_health, predicted_risk, feedback, timestamp)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+              (data['username'], data['age'], data['daily_hours'], data['work_related'], data['platform'],
                data['usage_years'], data['sleep_hours'], data['mental_health'],
                data['predicted_risk'], data['feedback'], datetime.now()))
     conn.commit()
     log_activity("feedback", data['username'], f"Gave {data['feedback']} feedback")
     conn.close()
 
-def save_usage_entry(username, date, hours, minutes, platform):
+def save_usage_entry(username, date, hours, minutes, work_related, platform):
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     total_minutes = (hours * 60) + minutes
     c.execute('''INSERT INTO usage_tracking 
-                 (username, date, hours, minutes, total_minutes, platform, timestamp)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)''',
-              (username, date, hours, minutes, total_minutes, platform, datetime.now()))
+                 (username, date, hours, minutes, total_minutes, work_related, platform, timestamp)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+              (username, date, hours, minutes, total_minutes, work_related, platform, datetime.now()))
     conn.commit()
-    log_activity("usage_log", username, f"Logged {hours}h {minutes}m usage", f"Platform:{platform}")
+    log_activity("usage_log", username, f"Logged {hours}h {minutes}m usage", f"Work:{work_related}, Platform:{platform}")
     conn.close()
 
 def get_user_usage(username, days=30):
     conn = sqlite3.connect('users.db')
     cutoff_date = (datetime.now() - timedelta(days=days)).date()
     df = pd.read_sql_query(f"""
-        SELECT date, hours, minutes, total_minutes, platform 
+        SELECT date, hours, minutes, total_minutes, work_related, platform 
         FROM usage_tracking 
         WHERE username = '{username}' AND date >= '{cutoff_date}'
         ORDER BY date DESC
@@ -448,8 +401,8 @@ def get_all_users():
     conn.close()
     return df
 
-# --- Risk Analysis Function ---
-def analyze_risk(age, daily_hours, start_year, primary_platform, sleep_hours, mental_health):
+# --- Risk Analysis Function (Enhanced with work-related factor) ---
+def analyze_risk(age, daily_hours, work_related, start_year, primary_platform, sleep_hours, mental_health):
     current_year = datetime.now().year
     usage_years = current_year - start_year
     
@@ -462,6 +415,7 @@ def analyze_risk(age, daily_hours, start_year, primary_platform, sleep_hours, me
     
     platform_risk = platform_risk_map.get(primary_platform, 'Medium')
     
+    # Experience Risk
     if usage_years > 5:
         experience_risk = 'High'
     elif usage_years > 2:
@@ -469,13 +423,23 @@ def analyze_risk(age, daily_hours, start_year, primary_platform, sleep_hours, me
     else:
         experience_risk = 'Low'
     
-    if daily_hours > 3:
-        usage_risk = 'High'
-    elif daily_hours > 2:
-        usage_risk = 'Medium'
-    else:
-        usage_risk = 'Low'
+    # Usage Risk (adjusted for work-related usage)
+    if work_related == 1:  # If usage is work-related, higher threshold
+        if daily_hours > 5:
+            usage_risk = 'High'
+        elif daily_hours > 3:
+            usage_risk = 'Medium'
+        else:
+            usage_risk = 'Low'
+    else:  # Personal usage - stricter threshold
+        if daily_hours > 3:
+            usage_risk = 'High'
+        elif daily_hours > 2:
+            usage_risk = 'Medium'
+        else:
+            usage_risk = 'Low'
     
+    # Sleep Risk
     if sleep_hours < 6:
         sleep_risk = 'High'
     elif sleep_hours < 7:
@@ -483,6 +447,7 @@ def analyze_risk(age, daily_hours, start_year, primary_platform, sleep_hours, me
     else:
         sleep_risk = 'Low'
     
+    # Mental Health Risk
     if mental_health < 4:
         mental_risk = 'High'
     elif mental_health < 7:
@@ -490,9 +455,14 @@ def analyze_risk(age, daily_hours, start_year, primary_platform, sleep_hours, me
     else:
         mental_risk = 'Low'
     
+    # Calculate risk with work-related adjustment
     risk_scores = {'High': 3, 'Medium': 2, 'Low': 1}
+    
+    # Work-related factor reduces risk slightly (multiply by 0.9)
+    work_factor = 0.9 if work_related == 1 else 1.0
+    
     total_score = (risk_scores[usage_risk] * 2 + risk_scores[platform_risk] * 1.5 +
-                  risk_scores[experience_risk] + risk_scores[sleep_risk] + risk_scores[mental_risk])
+                  risk_scores[experience_risk] + risk_scores[sleep_risk] + risk_scores[mental_risk]) * work_factor
     avg_score = total_score / 6.5
     
     if avg_score > 2.3:
@@ -511,6 +481,7 @@ def analyze_risk(age, daily_hours, start_year, primary_platform, sleep_hours, me
         'mental_risk': mental_risk,
         'usage_years': usage_years,
         'daily_hours': daily_hours,
+        'work_related': work_related,
         'platform': primary_platform,
         'sleep_hours': sleep_hours,
         'mental_health': mental_health
@@ -521,9 +492,9 @@ if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = None
     st.session_state.is_admin = False
-    st.session_state.current_page = "public"
-    st.session_state.public_feature = None
-    st.session_state.logged_in_feature = None
+    st.session_state.page = "public"
+    st.session_state.public_menu = None
+    st.session_state.dashboard_menu = "main"
     st.session_state.last_risk_result = None
 
 # --- LOGIN PAGE HEADER ---
@@ -545,51 +516,47 @@ if not st.session_state.logged_in:
 # --- PUBLIC SECTION (No login) ---
 if not st.session_state.logged_in:
     
-    if st.session_state.public_feature is None:
+    if st.session_state.public_menu is None:
         st.markdown("## 👋 Welcome to Social Media Addiction Risk Analyzer")
+        st.markdown("### Select an option below:")
         
-        # Public features grid
-        st.markdown('<div class="public-grid">', unsafe_allow_html=True)
-        
+        # Public menu grid
         col1, col2, col3 = st.columns(3)
         
         with col1:
             if st.button("📋 About App", key="pub_about", use_container_width=True):
-                st.session_state.public_feature = "about"
+                st.session_state.public_menu = "about"
                 st.rerun()
             if st.button("⚡ Quick Test", key="pub_test", use_container_width=True):
-                st.session_state.public_feature = "quick_test"
+                st.session_state.public_menu = "quick_test"
                 st.rerun()
         
         with col2:
             if st.button("💬 Contact Admin", key="pub_contact", use_container_width=True):
-                st.session_state.public_feature = "contact"
+                st.session_state.public_menu = "contact"
                 st.rerun()
             if st.button("🔐 Login", key="pub_login", use_container_width=True):
-                st.session_state.public_feature = "login"
+                st.session_state.public_menu = "login"
                 st.rerun()
         
         with col3:
             if st.button("✨ Features", key="pub_features", use_container_width=True):
-                st.session_state.public_feature = "features"
+                st.session_state.public_menu = "features"
                 st.rerun()
             if st.button("📞 Get Help", key="pub_help", use_container_width=True):
-                st.session_state.public_feature = "help"
+                st.session_state.public_menu = "help"
                 st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
     
     else:
-        # Feature container with back button
-        st.markdown('<div class="feature-container">', unsafe_allow_html=True)
-        
         # Back button
-        if st.button("← Back to Menu", key="back_public"):
-            st.session_state.public_feature = None
+        if st.button("← Back to Main Menu", key="back_public"):
+            st.session_state.public_menu = None
             st.rerun()
         
+        st.markdown("---")
+        
         # About App
-        if st.session_state.public_feature == "about":
+        if st.session_state.public_menu == "about":
             st.markdown("## 📋 About This Application")
             st.markdown("""
             This application uses **Adaptive AdaBoost Machine Learning** to analyze social media addiction risk.
@@ -609,7 +576,7 @@ if not st.session_state.logged_in:
             """)
         
         # Quick Test
-        elif st.session_state.public_feature == "quick_test":
+        elif st.session_state.public_menu == "quick_test":
             st.markdown("## ⚡ Quick Risk Test")
             
             with st.form("quick_test_form"):
@@ -617,6 +584,7 @@ if not st.session_state.logged_in:
                 with col1:
                     age = st.number_input("Age", 13, 80, 22)
                     daily_hours = st.slider("Daily Usage (hours)", 0.5, 12.0, 2.5, 0.5)
+                    work_related = st.radio("Is this usage work-related?", ["Yes", "No"])
                 with col2:
                     start_year = st.number_input("Year started", min_value=2000, max_value=datetime.now().year, value=2018)
                     primary_platform = st.selectbox("Platform", ["TikTok", "Instagram", "Telegram", "YouTube", "Facebook", "Other"])
@@ -628,7 +596,8 @@ if not st.session_state.logged_in:
                     mental_health = st.slider("Mental Health Score", 1, 10, 7, 1)
                 
                 if st.form_submit_button("Test My Risk", use_container_width=True):
-                    result = analyze_risk(age, daily_hours, start_year, primary_platform, sleep_hours, mental_health)
+                    work_val = 1 if work_related == "Yes" else 0
+                    result = analyze_risk(age, daily_hours, work_val, start_year, primary_platform, sleep_hours, mental_health)
                     
                     if result['overall_risk'] == 'High':
                         st.markdown(f'<div class="risk-high"><h2>⚠️ HIGH ADDICTION RISK</h2></div>', unsafe_allow_html=True)
@@ -639,10 +608,9 @@ if not st.session_state.logged_in:
                     
                     st.info("📝 Login for detailed analysis and recommendations")
         
-        # Contact Admin (Only comment form)
-        elif st.session_state.public_feature == "contact":
+        # Contact Admin
+        elif st.session_state.public_menu == "contact":
             st.markdown("## 💬 Contact Admin")
-            st.markdown("Send your questions or comments to the administrator.")
             
             with st.form("comment_form"):
                 name = st.text_input("Your Name")
@@ -658,7 +626,7 @@ if not st.session_state.logged_in:
                         st.error("❌ Name and message are required")
         
         # Login
-        elif st.session_state.public_feature == "login":
+        elif st.session_state.public_menu == "login":
             st.markdown("## 🔐 Login")
             
             with st.form("login_form"):
@@ -671,14 +639,14 @@ if not st.session_state.logged_in:
                         st.session_state.logged_in = True
                         st.session_state.username = username
                         st.session_state.is_admin = user[3] == 1
-                        st.session_state.logged_in_feature = "dashboard"
+                        st.session_state.dashboard_menu = "main"
                         st.success("✅ Login successful!")
                         st.rerun()
                     else:
                         st.error("❌ Invalid credentials")
         
         # Features
-        elif st.session_state.public_feature == "features":
+        elif st.session_state.public_menu == "features":
             st.markdown("## ✨ All Features")
             
             col1, col2 = st.columns(2)
@@ -700,7 +668,7 @@ if not st.session_state.logged_in:
                 """)
         
         # Help
-        elif st.session_state.public_feature == "help":
+        elif st.session_state.public_menu == "help":
             st.markdown("## 📞 Get Help")
             st.markdown("""
             **For assistance:**
@@ -711,13 +679,11 @@ if not st.session_state.logged_in:
             **Office Hours:**
             - Monday - Friday: 9:00 AM - 5:00 PM
             """)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
     
     st.stop()
 
 # --- LOGGED IN SECTION ---
-# Sidebar with Dashboard, Profile, Logout
+# Sidebar with essential navigation only
 with st.sidebar:
     st.markdown(f"""
     <div class="sidebar-header">
@@ -726,71 +692,29 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     
-    # Dashboard button
+    # Essential navigation
     if st.button("🏠 Dashboard", key="nav_dashboard", use_container_width=True):
-        st.session_state.logged_in_feature = "dashboard"
+        st.session_state.dashboard_menu = "main"
         st.rerun()
     
-    # Profile button
-    if st.button("👤 My Profile", key="nav_profile", use_container_width=True):
-        st.session_state.logged_in_feature = "profile"
+    if st.button("👥 User Management", key="nav_users", use_container_width=True):
+        st.session_state.dashboard_menu = "user_management"
         st.rerun()
     
     st.markdown("---")
-    st.markdown("### Features")
     
-    # Regular features
-    if st.button("📊 Risk Analyzer", key="nav_analyzer", use_container_width=True):
-        st.session_state.logged_in_feature = "analyzer"
-        st.rerun()
-    
-    if st.button("📈 Usage Analytics", key="nav_analytics", use_container_width=True):
-        st.session_state.logged_in_feature = "analytics"
-        st.rerun()
-    
-    if st.button("💡 Recommendations", key="nav_recommendations", use_container_width=True):
-        st.session_state.logged_in_feature = "recommendations"
-        st.rerun()
-    
-    # Admin features
-    if st.session_state.is_admin:
-        st.markdown("---")
-        st.markdown("### Admin")
-        
-        if st.button("👥 User Management", key="nav_users", use_container_width=True):
-            st.session_state.logged_in_feature = "user_management"
-            st.rerun()
-        
-        if st.button("📋 Activity Log", key="nav_activity", use_container_width=True):
-            st.session_state.logged_in_feature = "activity"
-            st.rerun()
-        
-        if st.button("💬 Comments", key="nav_comments", use_container_width=True):
-            st.session_state.logged_in_feature = "comments"
-            st.rerun()
-        
-        if st.button("📊 Feedback", key="nav_feedback", use_container_width=True):
-            st.session_state.logged_in_feature = "feedback"
-            st.rerun()
-    
-    st.markdown("---")
-    
-    # Logout button
     if st.button("🚪 Logout", key="nav_logout", use_container_width=True):
         log_activity("logout", st.session_state.username, "User logged out")
         st.session_state.logged_in = False
         st.session_state.username = None
         st.session_state.is_admin = False
-        st.session_state.logged_in_feature = None
+        st.session_state.page = "public"
         st.rerun()
 
-# --- MAIN CONTENT AREA ---
-st.markdown('<div class="feature-container">', unsafe_allow_html=True)
-
-# Dashboard
-if st.session_state.logged_in_feature == "dashboard" or st.session_state.logged_in_feature is None:
+# --- DASHBOARD MAIN PAGE (with feature menu) ---
+if st.session_state.dashboard_menu == "main":
     st.markdown("## 📋 Dashboard")
-    st.markdown(f"Welcome back, {st.session_state.username}! Select a feature from the sidebar to get started.")
+    st.markdown(f"Welcome back, {st.session_state.username}!")
     
     # Quick stats
     col1, col2, col3 = st.columns(3)
@@ -807,10 +731,238 @@ if st.session_state.logged_in_feature == "dashboard" or st.session_state.logged_
         st.metric("Risk Analyses", risk_count)
     with col3:
         st.metric("Feedback Given", feedback_count)
+    
+    st.markdown("### 📱 Features")
+    st.markdown("Select a feature to get started:")
+    
+    # Feature menu grid
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📊 Risk Analyzer", key="feat_analyzer", use_container_width=True):
+            st.session_state.dashboard_menu = "analyzer"
+            st.rerun()
+        if st.button("📈 Usage Analytics", key="feat_analytics", use_container_width=True):
+            st.session_state.dashboard_menu = "analytics"
+            st.rerun()
+    
+    with col2:
+        if st.button("💡 Recommendations", key="feat_recommend", use_container_width=True):
+            st.session_state.dashboard_menu = "recommendations"
+            st.rerun()
+        if st.button("👤 My Profile", key="feat_profile", use_container_width=True):
+            st.session_state.dashboard_menu = "profile"
+            st.rerun()
+    
+    with col3:
+        if st.button("📝 Feedback", key="feat_feedback", use_container_width=True):
+            st.session_state.dashboard_menu = "feedback_form"
+            st.rerun()
+        if st.button("📊 Activity", key="feat_activity", use_container_width=True):
+            st.session_state.dashboard_menu = "my_activity"
+            st.rerun()
+    
+    # Admin-only features
+    if st.session_state.is_admin:
+        st.markdown("### 👑 Admin Features")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("💬 Comments", key="feat_comments", use_container_width=True):
+                st.session_state.dashboard_menu = "comments"
+                st.rerun()
+        with col2:
+            if st.button("📊 Model Feedback", key="feat_model_feedback", use_container_width=True):
+                st.session_state.dashboard_menu = "feedback"
+                st.rerun()
+        with col3:
+            if st.button("📋 Activity Log", key="feat_activity_log", use_container_width=True):
+                st.session_state.dashboard_menu = "activity"
+                st.rerun()
+
+# --- FEATURE PAGES (Full screen) ---
+
+# Risk Analyzer
+elif st.session_state.dashboard_menu == "analyzer":
+    st.markdown("## 📊 Risk Analyzer")
+    
+    # Back to dashboard button
+    if st.button("← Back to Dashboard", key="back_analyzer"):
+        st.session_state.dashboard_menu = "main"
+        st.rerun()
+    
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        age = st.number_input("Age", 13, 80, 22, key="analyzer_age")
+        daily_hours = st.slider("Daily Usage (hours)", 0.5, 15.0, 2.5, 0.5, key="analyzer_hours")
+        work_related = st.radio("Is this usage work-related?", ["Yes", "No"], key="analyzer_work")
+        start_year = st.number_input("Year started using social media", min_value=2000, max_value=datetime.now().year, value=2018, key="analyzer_year")
+    
+    with col2:
+        primary_platform = st.selectbox("Primary Platform", ["TikTok", "Instagram", "Telegram", "YouTube", "Facebook", "LinkedIn", "Snapchat", "WhatsApp", "Twitter", "Google", "Other"], key="analyzer_platform")
+        sleep_hours = st.slider("Sleep (hours/night)", 3.0, 12.0, 7.0, 0.5, key="analyzer_sleep")
+        mental_health = st.slider("Mental Health Score", 1, 10, 7, 1, key="analyzer_mental")
+        other_platforms = st.multiselect("Other platforms you use", ["TikTok", "Instagram", "Telegram", "YouTube", "Facebook", "LinkedIn", "Snapchat", "WhatsApp", "Twitter", "Google"])
+    
+    if st.button("🔍 Analyze My Risk", type="primary", use_container_width=True):
+        work_val = 1 if work_related == "Yes" else 0
+        result = analyze_risk(age, daily_hours, work_val, start_year, primary_platform, sleep_hours, mental_health)
+        st.session_state.last_risk_result = result
+        
+        # Log the analysis
+        log_risk_analysis(st.session_state.username, age, daily_hours, work_val, start_year, primary_platform, sleep_hours, mental_health, result['overall_risk'])
+        
+        # Display Result
+        if result['overall_risk'] == 'High':
+            st.markdown(f'<div class="risk-high"><h2>⚠️ HIGH ADDICTION RISK</h2><p>Confidence: 85%</p></div>', unsafe_allow_html=True)
+        elif result['overall_risk'] == 'Medium':
+            st.markdown(f'<div class="risk-moderate"><h2>⚠️ MODERATE ADDICTION RISK</h2><p>Confidence: 85%</p></div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="risk-low"><h2>✅ LOW ADDICTION RISK</h2><p>Confidence: 85%</p></div>', unsafe_allow_html=True)
+        
+        # Show recommendations
+        st.markdown("### 💡 Personalized Recommendations")
+        
+        if result['overall_risk'] == 'High':
+            st.markdown("""
+            <div class="recommendations">
+                <h4>🔴 HIGH RISK - Immediate Action Required:</h4>
+                <ul>
+                    <li>📱 Reduce personal usage to under 3 hours per day immediately</li>
+                    <li>⏰ Set strict app timers (30-minute daily limits for non-work apps)</li>
+                    <li>🌙 No phones in bedroom - charge outside at night</li>
+                    <li>🎯 Take a 7-day digital detox challenge</li>
+                    <li>💼 Separate work and personal devices if possible</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+        elif result['overall_risk'] == 'Medium':
+            st.markdown("""
+            <div class="recommendations">
+                <h4>🟡 MODERATE RISK - Take Preventive Measures:</h4>
+                <ul>
+                    <li>📱 Limit personal usage to 2-3 hours per day</li>
+                    <li>⏰ Use focus mode during work/study hours</li>
+                    <li>🌙 No phone 1 hour before bed</li>
+                    <li>📊 Track your usage weekly</li>
+                    <li>💼 Schedule social media breaks between work tasks</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="recommendations">
+                <h4>🟢 LOW RISK - Maintain Healthy Habits:</h4>
+                <ul>
+                    <li>📱 Keep personal usage only when necessary</li>
+                    <li>⏰ Continue monitoring your daily usage</li>
+                    <li>🌙 Maintain good sleep hygiene</li>
+                    <li>🎯 Use social media intentionally, not habitually</li>
+                    <li>💼 Maintain work-life balance in digital usage</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Feedback
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            if st.button("👍 Yes, Accurate", key="like", use_container_width=True):
+                feedback_data = {
+                    'username': st.session_state.username,
+                    'age': age, 'daily_hours': daily_hours, 'work_related': work_val, 'platform': primary_platform,
+                    'usage_years': result['usage_years'], 'sleep_hours': sleep_hours,
+                    'mental_health': mental_health, 'predicted_risk': result['overall_risk'],
+                    'feedback': 'like'
+                }
+                save_feedback(feedback_data)
+                st.success("✅ Thank you!")
+        
+        with col_f2:
+            if st.button("👎 No, Inaccurate", key="unlike", use_container_width=True):
+                feedback_data = {
+                    'username': st.session_state.username,
+                    'age': age, 'daily_hours': daily_hours, 'work_related': work_val, 'platform': primary_platform,
+                    'usage_years': result['usage_years'], 'sleep_hours': sleep_hours,
+                    'mental_health': mental_health, 'predicted_risk': result['overall_risk'],
+                    'feedback': 'unlike'
+                }
+                save_feedback(feedback_data)
+                st.info("📝 Thank you!")
+
+# Recommendations
+elif st.session_state.dashboard_menu == "recommendations":
+    st.markdown("## 💡 Personalized Recommendations")
+    
+    if st.button("← Back to Dashboard", key="back_recommend"):
+        st.session_state.dashboard_menu = "main"
+        st.rerun()
+    
+    st.markdown("---")
+    
+    if st.session_state.last_risk_result:
+        result = st.session_state.last_risk_result
+        
+        if result['overall_risk'] == 'High':
+            st.markdown("""
+            <div class="recommendations">
+                <h4>🔴 HIGH RISK - Immediate Action Required:</h4>
+                <ul>
+                    <li>📱 Reduce personal usage to under 3 hours per day immediately</li>
+                    <li>⏰ Set strict app timers (30-minute daily limits for non-work apps)</li>
+                    <li>🌙 No phones in bedroom - charge outside at night</li>
+                    <li>🎯 Take a 7-day digital detox challenge</li>
+                    <li>💼 Separate work and personal devices if possible</li>
+                    <li>📊 Use screen time tracking apps</li>
+                    <li>👥 Join a digital wellness group</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+        elif result['overall_risk'] == 'Medium':
+            st.markdown("""
+            <div class="recommendations">
+                <h4>🟡 MODERATE RISK - Take Preventive Measures:</h4>
+                <ul>
+                    <li>📱 Limit personal usage to 2-3 hours per day</li>
+                    <li>⏰ Use focus mode during work/study hours</li>
+                    <li>🌙 No phone 1 hour before bed</li>
+                    <li>📊 Track your usage weekly</li>
+                    <li>💼 Schedule social media breaks between work tasks</li>
+                    <li>🎯 Set specific times for checking social media</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="recommendations">
+                <h4>🟢 LOW RISK - Maintain Healthy Habits:</h4>
+                <ul>
+                    <li>📱 Keep personal usage only when necessary</li>
+                    <li>⏰ Continue monitoring your daily usage</li>
+                    <li>🌙 Maintain good sleep hygiene</li>
+                    <li>🎯 Use social media intentionally, not habitually</li>
+                    <li>💼 Maintain work-life balance in digital usage</li>
+                    <li>👥 Encourage friends to maintain balance too</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("Please run a risk analysis first to get personalized recommendations.")
+        if st.button("Go to Risk Analyzer"):
+            st.session_state.dashboard_menu = "analyzer"
+            st.rerun()
 
 # Profile
-elif st.session_state.logged_in_feature == "profile":
+elif st.session_state.dashboard_menu == "profile":
     st.markdown("## 👤 My Profile")
+    
+    if st.button("← Back to Dashboard", key="back_profile"):
+        st.session_state.dashboard_menu = "main"
+        st.rerun()
+    
+    st.markdown("---")
     
     conn = sqlite3.connect('users.db')
     usage_count = pd.read_sql_query(f"SELECT COUNT(*) as count FROM usage_tracking WHERE username='{st.session_state.username}'", conn).iloc[0]['count']
@@ -834,155 +986,89 @@ elif st.session_state.logged_in_feature == "profile":
     with col6:
         st.metric("Feedback Given", feedback_count)
 
-# Risk Analyzer
-elif st.session_state.logged_in_feature == "analyzer":
-    st.markdown("## 📊 Risk Analyzer")
+# Feedback Form
+elif st.session_state.dashboard_menu == "feedback_form":
+    st.markdown("## 📝 Submit Feedback")
     
-    col1, col2 = st.columns(2)
+    if st.button("← Back to Dashboard", key="back_feedback_form"):
+        st.session_state.dashboard_menu = "main"
+        st.rerun()
     
-    with col1:
-        age = st.number_input("Age", 13, 80, 22, key="analyzer_age")
-        daily_hours = st.slider("Daily Usage (hours)", 0.5, 12.0, 2.5, 0.5, key="analyzer_hours")
-        start_year = st.number_input("Year started", min_value=2000, max_value=datetime.now().year, value=2018, key="analyzer_year")
+    st.markdown("---")
     
-    with col2:
-        primary_platform = st.selectbox("Primary Platform", ["TikTok", "Instagram", "Telegram", "YouTube", "Facebook", "LinkedIn", "Snapchat", "WhatsApp", "Twitter", "Google", "Other"], key="analyzer_platform")
-        sleep_hours = st.slider("Sleep (hours/night)", 3.0, 12.0, 7.0, 0.5, key="analyzer_sleep")
-        mental_health = st.slider("Mental Health Score", 1, 10, 7, 1, key="analyzer_mental")
-    
-    if st.button("🔍 Analyze My Risk", type="primary", use_container_width=True):
-        result = analyze_risk(age, daily_hours, start_year, primary_platform, sleep_hours, mental_health)
-        st.session_state.last_risk_result = result
+    with st.form("feedback_form"):
+        feedback_type = st.selectbox("Feedback Type", ["Suggestion", "Bug Report", "Feature Request", "Other"])
+        feedback_text = st.text_area("Your Feedback")
         
-        # Log the analysis
-        log_risk_analysis(st.session_state.username, age, daily_hours, start_year, primary_platform, sleep_hours, mental_health, result['overall_risk'])
-        
-        # Display Result
-        if result['overall_risk'] == 'High':
-            st.markdown(f'<div class="risk-high"><h2>⚠️ HIGH ADDICTION RISK</h2><p>Confidence: 85%</p></div>', unsafe_allow_html=True)
-        elif result['overall_risk'] == 'Medium':
-            st.markdown(f'<div class="risk-moderate"><h2>⚠️ MODERATE ADDICTION RISK</h2><p>Confidence: 85%</p></div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="risk-low"><h2>✅ LOW ADDICTION RISK</h2><p>Confidence: 85%</p></div>', unsafe_allow_html=True)
-        
-        # Show recommendations
-        st.markdown("### 💡 Personalized Recommendations")
-        
-        if result['overall_risk'] == 'High':
-            st.markdown("""
-            <div class="recommendations">
-                <h4>🔴 HIGH RISK - Immediate Action Required:</h4>
-                <ul>
-                    <li>📱 Reduce usage to under 3 hours per day immediately</li>
-                    <li>⏰ Set strict app timers (30-minute daily limits)</li>
-                    <li>🌙 No phones in bedroom - charge outside at night</li>
-                    <li>🎯 Take a 7-day digital detox challenge</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        elif result['overall_risk'] == 'Medium':
-            st.markdown("""
-            <div class="recommendations">
-                <h4>🟡 MODERATE RISK - Take Preventive Measures:</h4>
-                <ul>
-                    <li>📱 Limit usage to 2-3 hours per day</li>
-                    <li>⏰ Use focus mode during work/study hours</li>
-                    <li>🌙 No phone 1 hour before bed</li>
-                    <li>📊 Track your usage weekly</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div class="recommendations">
-                <h4>🟢 LOW RISK - Maintain Healthy Habits:</h4>
-                <ul>
-                    <li>📱 Keep using only when necessary</li>
-                    <li>⏰ Continue monitoring your daily usage</li>
-                    <li>🌙 Maintain good sleep hygiene</li>
-                    <li>🎯 Use social media intentionally</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Feedback
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            if st.button("👍 Yes, Accurate", key="like", use_container_width=True):
-                feedback_data = {
-                    'username': st.session_state.username,
-                    'age': age, 'daily_hours': daily_hours, 'platform': primary_platform,
-                    'usage_years': result['usage_years'], 'sleep_hours': sleep_hours,
-                    'mental_health': mental_health, 'predicted_risk': result['overall_risk'],
-                    'feedback': 'like'
-                }
-                save_feedback(feedback_data)
-                st.success("✅ Thank you!")
-        
-        with col_f2:
-            if st.button("👎 No, Inaccurate", key="unlike", use_container_width=True):
-                feedback_data = {
-                    'username': st.session_state.username,
-                    'age': age, 'daily_hours': daily_hours, 'platform': primary_platform,
-                    'usage_years': result['usage_years'], 'sleep_hours': sleep_hours,
-                    'mental_health': mental_health, 'predicted_risk': result['overall_risk'],
-                    'feedback': 'unlike'
-                }
-                save_feedback(feedback_data)
-                st.info("📝 Thank you!")
+        if st.form_submit_button("Submit Feedback", use_container_width=True):
+            if feedback_text:
+                # Save to feedback table
+                conn = sqlite3.connect('users.db')
+                c = conn.cursor()
+                c.execute('''INSERT INTO feedback 
+                             (username, feedback, timestamp)
+                             VALUES (?, ?, ?)''',
+                          (st.session_state.username, f"{feedback_type}: {feedback_text}", datetime.now()))
+                conn.commit()
+                conn.close()
+                st.success("✅ Thank you for your feedback!")
+                st.balloons()
+            else:
+                st.error("❌ Please enter feedback")
 
-# Recommendations
-elif st.session_state.logged_in_feature == "recommendations":
-    st.markdown("## 💡 Personalized Recommendations")
+# My Activity
+elif st.session_state.dashboard_menu == "my_activity":
+    st.markdown("## 📊 My Activity")
     
-    if st.session_state.last_risk_result:
-        result = st.session_state.last_risk_result
-        
-        if result['overall_risk'] == 'High':
-            st.markdown("""
-            <div class="recommendations">
-                <h4>🔴 HIGH RISK - Immediate Action Required:</h4>
-                <ul>
-                    <li>📱 Reduce usage to under 3 hours per day immediately</li>
-                    <li>⏰ Set strict app timers (30-minute daily limits)</li>
-                    <li>🌙 No phones in bedroom - charge outside at night</li>
-                    <li>🎯 Take a 7-day digital detox challenge</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        elif result['overall_risk'] == 'Medium':
-            st.markdown("""
-            <div class="recommendations">
-                <h4>🟡 MODERATE RISK - Take Preventive Measures:</h4>
-                <ul>
-                    <li>📱 Limit usage to 2-3 hours per day</li>
-                    <li>⏰ Use focus mode during work/study hours</li>
-                    <li>🌙 No phone 1 hour before bed</li>
-                    <li>📊 Track your usage weekly</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
+    if st.button("← Back to Dashboard", key="back_my_activity"):
+        st.session_state.dashboard_menu = "main"
+        st.rerun()
+    
+    st.markdown("---")
+    
+    conn = sqlite3.connect('users.db')
+    my_activities = pd.read_sql_query(f"SELECT * FROM activities WHERE username='{st.session_state.username}' ORDER BY timestamp DESC LIMIT 50", conn)
+    my_risks = pd.read_sql_query(f"SELECT * FROM risk_analyses WHERE username='{st.session_state.username}' ORDER BY timestamp DESC LIMIT 20", conn)
+    conn.close()
+    
+    tab1, tab2 = st.tabs(["📋 My Activities", "📈 My Risk Analyses"])
+    
+    with tab1:
+        if not my_activities.empty:
+            for _, row in my_activities.iterrows():
+                st.markdown(f"""
+                <div class="activity-card">
+                    <strong>{row['activity_type']}</strong><br>
+                    {row['description']}<br>
+                    <span class="activity-time">{row['timestamp']}</span>
+                </div>
+                """, unsafe_allow_html=True)
         else:
-            st.markdown("""
-            <div class="recommendations">
-                <h4>🟢 LOW RISK - Maintain Healthy Habits:</h4>
-                <ul>
-                    <li>📱 Keep using only when necessary</li>
-                    <li>⏰ Continue monitoring your daily usage</li>
-                    <li>🌙 Maintain good sleep hygiene</li>
-                    <li>🎯 Use social media intentionally</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("Please run a risk analysis first to get personalized recommendations.")
-        if st.button("Go to Risk Analyzer"):
-            st.session_state.logged_in_feature = "analyzer"
-            st.rerun()
+            st.info("No activities yet")
+    
+    with tab2:
+        if not my_risks.empty:
+            for _, row in my_risks.iterrows():
+                st.markdown(f"""
+                <div class="activity-card">
+                    <strong>Risk: {row['risk_result']}</strong><br>
+                    Age: {row['age']}, Hours: {row['daily_hours']}, Work: {'Yes' if row['work_related'] == 1 else 'No'}<br>
+                    Platform: {row['platform']}<br>
+                    <span class="activity-time">{row['timestamp']}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No risk analyses yet")
 
 # Usage Analytics
-elif st.session_state.logged_in_feature == "analytics":
+elif st.session_state.dashboard_menu == "analytics":
     st.markdown("## 📈 Usage Analytics")
+    
+    if st.button("← Back to Dashboard", key="back_analytics"):
+        st.session_state.dashboard_menu = "main"
+        st.rerun()
+    
+    st.markdown("---")
     
     tab1, tab2, tab3 = st.tabs(["📝 Log Usage", "📊 View Analytics", "📅 History"])
     
@@ -994,10 +1080,12 @@ elif st.session_state.logged_in_feature == "analytics":
             hours = st.number_input("Hours", 0, 24, 2)
             minutes = st.selectbox("Minutes", [0, 15, 30, 45])
         with col2:
-            platform = st.selectbox("Platform", ["TikTok", "Instagram", "Telegram", "YouTube", "Facebook", "LinkedIn", "Snapchat", "WhatsApp", "Twitter", "Google", "Other"])
+            work_related = st.radio("Was this work-related?", ["Yes", "No"])
+            platform = st.selectbox("Platform Used Most", ["TikTok", "Instagram", "Telegram", "YouTube", "Facebook", "LinkedIn", "Snapchat", "WhatsApp", "Twitter", "Google", "Other"])
         
         if st.button("Save Usage Entry", use_container_width=True):
-            save_usage_entry(st.session_state.username, log_date, hours, minutes, platform)
+            work_val = 1 if work_related == "Yes" else 0
+            save_usage_entry(st.session_state.username, log_date, hours, minutes, work_val, platform)
             st.success("✅ Usage logged successfully!")
             st.balloons()
     
@@ -1020,17 +1108,27 @@ elif st.session_state.logged_in_feature == "analytics":
                 most_used = usage_df['platform'].mode()[0] if not usage_df.empty else "N/A"
                 st.metric("Most Used", most_used)
             
-            # Usage trend
-            daily_trend = usage_df.groupby('date')['total_minutes'].sum().reset_index()
-            daily_trend['hours'] = daily_trend['total_minutes'] / 60
-            fig = px.line(daily_trend, x='date', y='hours', title='Usage Trend')
-            st.plotly_chart(fig, use_container_width=True)
+            # Work vs Personal chart
+            work_data = usage_df.groupby('work_related')['total_minutes'].sum().reset_index()
+            work_data['type'] = work_data['work_related'].map({0: 'Personal', 1: 'Work'})
+            
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig1 = px.pie(work_data, values='total_minutes', names='type', title='Work vs Personal Usage')
+                st.plotly_chart(fig1, use_container_width=True)
+            
+            with col_b:
+                # Usage trend
+                daily_trend = usage_df.groupby('date')['total_minutes'].sum().reset_index()
+                daily_trend['hours'] = daily_trend['total_minutes'] / 60
+                fig2 = px.line(daily_trend, x='date', y='hours', title='Usage Trend')
+                st.plotly_chart(fig2, use_container_width=True)
             
             # Platform distribution
             platform_stats = usage_df.groupby('platform')['total_minutes'].sum().reset_index()
             platform_stats['hours'] = platform_stats['total_minutes'] / 60
-            fig2 = px.pie(platform_stats, values='hours', names='platform', title='Usage by Platform')
-            st.plotly_chart(fig2, use_container_width=True)
+            fig3 = px.pie(platform_stats, values='hours', names='platform', title='Usage by Platform')
+            st.plotly_chart(fig3, use_container_width=True)
         else:
             st.info("No usage data yet")
     
@@ -1039,12 +1137,21 @@ elif st.session_state.logged_in_feature == "analytics":
         if not usage_df.empty:
             display_df = usage_df.copy()
             display_df['usage'] = display_df['hours'].astype(str) + "h " + display_df['minutes'].astype(str) + "m"
-            display_df = display_df[['date', 'usage', 'platform']].sort_values('date', ascending=False)
+            display_df['type'] = display_df['work_related'].map({0: 'Personal', 1: 'Work'})
+            display_df = display_df[['date', 'usage', 'type', 'platform']].sort_values('date', ascending=False)
             st.dataframe(display_df, use_container_width=True)
 
-# ADMIN: User Management
-elif st.session_state.logged_in_feature == "user_management" and st.session_state.is_admin:
+# --- ADMIN PAGES ---
+
+# User Management
+elif st.session_state.dashboard_menu == "user_management" and st.session_state.is_admin:
     st.markdown("## 👥 User Management")
+    
+    if st.button("← Back to Dashboard", key="back_user_mgt"):
+        st.session_state.dashboard_menu = "main"
+        st.rerun()
+    
+    st.markdown("---")
     
     with st.form("create_user_form"):
         st.markdown("### Create New User")
@@ -1073,57 +1180,15 @@ elif st.session_state.logged_in_feature == "user_management" and st.session_stat
     if not users_df.empty:
         st.dataframe(users_df, use_container_width=True)
 
-# ADMIN: Activity Log (Shows ALL attempts)
-elif st.session_state.logged_in_feature == "activity" and st.session_state.is_admin:
-    st.markdown("## 📋 Activity Log")
-    
-    tab1, tab2, tab3 = st.tabs(["📊 All Activities", "📈 Risk Analyses", "👥 User Logins"])
-    
-    with tab1:
-        activities = get_all_activities(200)
-        if not activities.empty:
-            for _, row in activities.iterrows():
-                st.markdown(f"""
-                <div class="activity-card">
-                    <strong>{row['activity_type']}</strong> - {row['username']}<br>
-                    {row['description']}<br>
-                    {f"<small>{row['details']}</small><br>" if row['details'] else ""}
-                    <span class="activity-time">{row['timestamp']}</span>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("No activities yet")
-    
-    with tab2:
-        risk_analyses = get_risk_analyses(200)
-        if not risk_analyses.empty:
-            for _, row in risk_analyses.iterrows():
-                st.markdown(f"""
-                <div class="activity-card">
-                    <strong>Risk Analysis</strong> - {row['username']}<br>
-                    Result: {row['risk_result']} | Age: {row['age']}, Hours: {row['daily_hours']}, Platform: {row['platform']}<br>
-                    <span class="activity-time">{row['timestamp']}</span>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("No risk analyses yet")
-    
-    with tab3:
-        logins = get_recent_logins()
-        if not logins.empty:
-            for _, row in logins.iterrows():
-                st.markdown(f"""
-                <div class="activity-card">
-                    <strong>👤 {row['username']}</strong><br>
-                    Last login: {row['last_login']}
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("No login data yet")
-
-# ADMIN: Comments
-elif st.session_state.logged_in_feature == "comments" and st.session_state.is_admin:
+# Comments
+elif st.session_state.dashboard_menu == "comments" and st.session_state.is_admin:
     st.markdown("## 💬 Public Comments")
+    
+    if st.button("← Back to Dashboard", key="back_comments"):
+        st.session_state.dashboard_menu = "main"
+        st.rerun()
+    
+    st.markdown("---")
     
     comments = get_all_comments()
     if not comments.empty:
@@ -1156,9 +1221,70 @@ elif st.session_state.logged_in_feature == "comments" and st.session_state.is_ad
     else:
         st.info("No comments yet")
 
-# ADMIN: Feedback
-elif st.session_state.logged_in_feature == "feedback" and st.session_state.is_admin:
+# Activity Log
+elif st.session_state.dashboard_menu == "activity" and st.session_state.is_admin:
+    st.markdown("## 📋 Activity Log")
+    
+    if st.button("← Back to Dashboard", key="back_activity_log"):
+        st.session_state.dashboard_menu = "main"
+        st.rerun()
+    
+    st.markdown("---")
+    
+    tab1, tab2, tab3 = st.tabs(["📊 All Activities", "📈 Risk Analyses", "👥 User Logins"])
+    
+    with tab1:
+        activities = get_all_activities(200)
+        if not activities.empty:
+            for _, row in activities.iterrows():
+                st.markdown(f"""
+                <div class="activity-card">
+                    <strong>{row['activity_type']}</strong> - {row['username']}<br>
+                    {row['description']}<br>
+                    {f"<small>{row['details']}</small><br>" if row['details'] else ""}
+                    <span class="activity-time">{row['timestamp']}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No activities yet")
+    
+    with tab2:
+        risk_analyses = get_risk_analyses(200)
+        if not risk_analyses.empty:
+            for _, row in risk_analyses.iterrows():
+                st.markdown(f"""
+                <div class="activity-card">
+                    <strong>Risk Analysis</strong> - {row['username']}<br>
+                    Result: {row['risk_result']} | Age: {row['age']}, Hours: {row['daily_hours']}, Work: {'Yes' if row['work_related'] == 1 else 'No'}<br>
+                    Platform: {row['platform']}<br>
+                    <span class="activity-time">{row['timestamp']}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No risk analyses yet")
+    
+    with tab3:
+        logins = get_recent_logins()
+        if not logins.empty:
+            for _, row in logins.iterrows():
+                st.markdown(f"""
+                <div class="activity-card">
+                    <strong>👤 {row['username']}</strong><br>
+                    Last login: {row['last_login']}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No login data yet")
+
+# Model Feedback
+elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin:
     st.markdown("## 📊 Model Feedback")
+    
+    if st.button("← Back to Dashboard", key="back_feedback"):
+        st.session_state.dashboard_menu = "main"
+        st.rerun()
+    
+    st.markdown("---")
     
     conn = sqlite3.connect('users.db')
     feedback_df = pd.read_sql_query("SELECT * FROM feedback ORDER BY timestamp DESC", conn)
@@ -1178,8 +1304,6 @@ elif st.session_state.logged_in_feature == "feedback" and st.session_state.is_ad
         st.dataframe(feedback_df, use_container_width=True)
     else:
         st.info("No feedback yet")
-
-st.markdown('</div>', unsafe_allow_html=True)
 
 # --- Footer ---
 st.markdown("""
