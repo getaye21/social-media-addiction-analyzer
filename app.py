@@ -67,16 +67,17 @@ def train_model_if_missing():
             feature_cols = ['age', 'gender_encoded', 'daily_usage_hours', 'sleep_hours', 'mental_health_score', 'monthly_conflicts', 'platform_risk_score', 'usage_sleep_ratio', 'mental_health_risk', 'conflict_rate', 'primary_platform_encoded', 'academic_impact_encoded', 'early_exposure_risk']
             
             X, y = df[feature_cols], df['target']
+            
+            # FIXED: Removed 'algorithm' for scikit-learn v1.6+ compatibility
             model = AdaBoostClassifier(
                 estimator=DecisionTreeClassifier(max_depth=2), 
                 n_estimators=200, 
                 learning_rate=0.8, 
-                algorithm='SAMME', 
                 random_state=42
             )
             model.fit(X, y)
 
-            # Save artifacts to the current directory
+            # Save artifacts
             joblib.dump(model, 'adaboost_model.pkl')
             joblib.dump(le_dict, 'label_encoders.pkl')
             joblib.dump(feature_cols, 'feature_columns.pkl')
@@ -198,12 +199,10 @@ with tab1:
 with tab2:
     st.markdown("### ℹ️ About the AdaBoost Model")
     st.markdown("""
-    
     The **Adaptive Boosting (AdaBoost)** algorithm works by combining multiple simple decision trees (weak learners). 
     In this project, we use **200 estimators** with a learning rate of **0.8**.
     
     - **Base Learner:** Decision Tree (Max Depth: 2)
-    - **Algorithm:** SAMME
     - **Key Risk Indicators:** Daily Usage, Mental Health, and Age of Exposure.
     """)
 
