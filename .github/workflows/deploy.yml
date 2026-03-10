@@ -12,9 +12,14 @@ jobs:
         with:
           fetch-depth: 0
           lfs: true
+      
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Replace 'username/space-name' with your actual HF info
-          git push --force https://YOUR_HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/YOUR_HF_USERNAME/YOUR_SPACE_NAME main
+          # 1. Add the Hugging Face repo as a remote
+          # Use your actual HF username and Space name here!
+          git remote add hf https://Getaye:$HF_TOKEN@huggingface.co/spaces/Getaye/social-media-addiction-analyzer
+          
+          # 2. Force push to the 'main' branch of the 'hf' remote
+          git push --force hf main
