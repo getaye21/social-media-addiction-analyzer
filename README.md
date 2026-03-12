@@ -68,10 +68,6 @@ Try the live application on Hugging Face Spaces:
 ```text
 .
 ├── .github/workflows/deploy.yml  # Auto-sync to HF
-├── app.py                       # Streamlit Application
-├── model/
-│   └── adaboost_model.pkl       # Trained Model File
-├── data/
-│   └── processed_data.csv       # Training Data
+├── app.py                       # Streamlit Application, Trained Model File and Training Data
 ├── requirements.txt             # Dependencies
 └── README.md                    # Project Documentation
