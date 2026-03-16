@@ -418,7 +418,7 @@ def init_db():
     # Create admin user if not exists
     admin_exists = c.execute("SELECT * FROM users WHERE username='getaye'").fetchone()
     if not admin_exists:
-        hashed_pw = hash_password("Getaye@2827")  # NOW hash_password is defined!
+        hashed_pw = hash_password("ML@2026")  # NOW hash_password is defined!
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
                  ("getaye", hashed_pw, datetime.now(), 1, None))
         print("✅ Admin user 'getaye' created")
