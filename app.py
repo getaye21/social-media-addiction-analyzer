@@ -15,27 +15,49 @@ from sklearn.ensemble import AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-# --- Page Config ---
-st.set_page_config(
-    page_title="Social Media Addiction Risk Analyzer",
-    page_icon="📱",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# =============================================================================
+# FIX FOR SQLITE DEPRECATION WARNING (Python 3.12+)
+# =============================================================================
+import sqlite3
+from datetime import datetime
 
-# --- Persistent Storage Setup for Hugging Face ---
+def adapt_datetime(dt):
+    """Adapt datetime to SQLite string format (ISO format)"""
+    return dt.isoformat()
+
+def convert_datetime(s):
+    """Convert SQLite string to datetime"""
+    try:
+        if isinstance(s, bytes):
+            s = s.decode('utf-8')
+        return datetime.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
+
+# Register the adapter and converter
+sqlite3.register_adapter(datetime, adapt_datetime)
+sqlite3.register_converter("timestamp", convert_datetime)
+
+# =============================================================================
+# PERSISTENT STORAGE SETUP FOR HUGGING FACE
+# =============================================================================
 def get_db_path():
     """Get database path with persistent storage on Hugging Face"""
+    # Hugging Face provides /data for persistent storage
     if os.path.exists('/data'):
         db_path = '/data/users.db'
+        backup_path = '/data/users.db.backup'
     else:
+        # Local development
         db_path = 'users.db'
+        backup_path = 'users.db.backup'
     
     # If database doesn't exist in persistent storage but exists locally, copy it
     if not os.path.exists(db_path) and os.path.exists('users.db'):
         shutil.copy2('users.db', db_path)
+        print(f"✅ Copied local database to {db_path}")
     
-    return db_path
+    return db_path, backup_path
 
 def get_model_path():
     """Get model path with persistent storage"""
@@ -43,7 +65,41 @@ def get_model_path():
         return '/data/adaboost_model.pkl'
     return 'adaboost_model.pkl'
 
-# --- Custom CSS ---
+# =============================================================================
+# DATABASE CONNECTION (with persistent storage)
+# =============================================================================
+def get_db_connection():
+    """Get database connection with persistent storage and datetime support"""
+    db_path, _ = get_db_path()
+    # Use detect_types to enable the converter
+    conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+    return conn
+
+def backup_database():
+    """Create a backup of the database"""
+    db_path, backup_path = get_db_path()
+    if os.path.exists(db_path):
+        try:
+            shutil.copy2(db_path, backup_path)
+            print(f"✅ Database backed up to {backup_path}")
+        except Exception as e:
+            print(f"⚠️ Backup failed: {e}")
+
+def restore_from_backup():
+    """Restore database from backup if main DB is missing"""
+    db_path, backup_path = get_db_path()
+    if not os.path.exists(db_path) and os.path.exists(backup_path):
+        try:
+            shutil.copy2(backup_path, db_path)
+            print(f"✅ Restored database from backup")
+            return True
+        except Exception as e:
+            print(f"⚠️ Restore failed: {e}")
+    return False
+
+# =============================================================================
+# CUSTOM CSS
+# =============================================================================
 st.markdown("""
 <style>
     /* Hide default select labels */
@@ -221,24 +277,22 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- Initialize Database with Persistent Storage ---
+# =============================================================================
+# DATABASE INITIALIZATION (with persistent storage)
+# =============================================================================
 def init_db():
-    db_path = get_db_path()
+    """Initialize database with all tables"""
+    # Try to restore from backup first
+    restore_from_backup()
     
-    # Check if we need to restore from backup
-    backup_path = 'users.db.backup'
-    if not os.path.exists(db_path) and os.path.exists(backup_path):
-        shutil.copy2(backup_path, db_path)
-        print("✅ Restored database from backup")
-    
-    conn = sqlite3.connect(db_path)
+    conn = get_db_connection()
     c = conn.cursor()
     
     # Users table
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (username TEXT PRIMARY KEY, password TEXT, created_at TIMESTAMP, is_admin INTEGER DEFAULT 0, last_login TIMESTAMP)''')
     
-    # Feedback table (for model feedback - like/unlike)
+    # Model feedback table (like/unlike)
     c.execute('''CREATE TABLE IF NOT EXISTS feedback
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   username TEXT,
@@ -261,7 +315,7 @@ def init_db():
                   feedback_text TEXT,
                   timestamp TIMESTAMP)''')
     
-    # Enhanced usage tracking table with multi-app support
+    # Usage tracking table with multi-app support
     c.execute('''CREATE TABLE IF NOT EXISTS usage_tracking
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   username TEXT,
@@ -318,28 +372,30 @@ def init_db():
                   training_samples INTEGER,
                   timestamp TIMESTAMP)''')
     
-    # Create admin user
+    # Create admin user if not exists
     admin_exists = c.execute("SELECT * FROM users WHERE username='getaye'").fetchone()
     if not admin_exists:
-        hashed_pw = hashlib.sha256("Getaye@2827".encode()).hexdigest()
+        hashed_pw = hash_password("Getaye@2827")
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
                  ("getaye", hashed_pw, datetime.now(), 1, None))
     
     conn.commit()
     
-    # Create a backup
-    if os.path.exists(db_path):
-        shutil.copy2(db_path, 'users.db.backup')
+    # Create a backup after successful initialization
+    backup_database()
     
     conn.close()
+    print("✅ Database initialized successfully")
 
+# Initialize database on startup
 init_db()
 
-# --- AdaBoost Model Training Function ---
+# =============================================================================
+# ADABOOST MODEL FUNCTIONS
+# =============================================================================
 def train_model_from_feedback():
     """Train AdaBoost model using collected feedback data"""
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
+    conn = get_db_connection()
     
     # Get only confirmed correct predictions (likes)
     feedback_df = pd.read_sql_query("""
@@ -355,14 +411,9 @@ def train_model_from_feedback():
         return None
     
     # Feature engineering
-    # Convert categorical variables to dummy variables
     platform_dummies = pd.get_dummies(feedback_df['platform'], prefix='platform')
-    
-    # Numerical features
     numerical_features = feedback_df[['age', 'daily_hours', 'work_related', 
                                       'sleep_hours', 'mental_health', 'usage_years']]
-    
-    # Combine features
     X = pd.concat([numerical_features, platform_dummies], axis=1)
     
     # Target variable
@@ -379,7 +430,7 @@ def train_model_from_feedback():
     
     model.fit(X, y)
     
-    # Calculate metrics (using training data as proxy - in production would use validation set)
+    # Calculate metrics
     y_pred = model.predict(X)
     accuracy = accuracy_score(y, y_pred)
     precision = precision_score(y, y_pred, average='weighted', zero_division=0)
@@ -404,7 +455,7 @@ def train_model_from_feedback():
     joblib.dump(model_data, model_path)
     
     # Save metrics to database
-    conn = sqlite3.connect(db_path)
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('''INSERT INTO model_metrics 
                  (accuracy, precision, recall, f1_score, training_samples, timestamp)
@@ -415,35 +466,32 @@ def train_model_from_feedback():
     
     return model_data
 
-# --- Load Model Function ---
 def load_model():
     """Load the trained AdaBoost model"""
     model_path = get_model_path()
     if os.path.exists(model_path):
         try:
             return joblib.load(model_path)
-        except:
+        except Exception as e:
+            print(f"⚠️ Error loading model: {e}")
             return None
     return None
 
-# --- AdaBoost Prediction Function ---
 def predict_with_model(age, daily_hours, work_related, start_year, 
                       primary_platform, sleep_hours, mental_health):
     """Use trained AdaBoost model for prediction"""
     model_data = load_model()
     
     if model_data is None:
-        return None  # Fall back to rule-based
+        return None
     
     model = model_data['model']
     feature_list = model_data['features']
     
-    # Calculate usage years
     current_year = datetime.now().year
     usage_years = current_year - start_year
     
     # Create feature vector
-    # Start with numerical features
     feature_dict = {
         'age': age,
         'daily_hours': daily_hours,
@@ -466,11 +514,8 @@ def predict_with_model(age, daily_hours, work_related, start_year,
     prediction = model.predict(X_pred)[0]
     probabilities = model.predict_proba(X_pred)[0]
     
-    # Map prediction back to risk level
     risk_map = {0: 'Low', 1: 'Medium', 2: 'High'}
     overall_risk = risk_map[prediction]
-    
-    # Get confidence (max probability)
     confidence = max(probabilities)
     
     return {
@@ -484,8 +529,8 @@ def predict_with_model(age, daily_hours, work_related, start_year,
         'mental_health': mental_health
     }
 
-# --- Rule-based Risk Analysis (Fallback) ---
 def analyze_risk_rule_based(age, daily_hours, work_related, start_year, primary_platform, sleep_hours, mental_health):
+    """Rule-based risk analysis (fallback)"""
     current_year = datetime.now().year
     usage_years = current_year - start_year
     
@@ -506,7 +551,7 @@ def analyze_risk_rule_based(age, daily_hours, work_related, start_year, primary_
     else:
         experience_risk = 'Low'
     
-    # Usage Risk (adjusted for work-related usage)
+    # Usage Risk
     if work_related == 1:
         if daily_hours > 5:
             usage_risk = 'High'
@@ -538,7 +583,7 @@ def analyze_risk_rule_based(age, daily_hours, work_related, start_year, primary_
     else:
         mental_risk = 'Low'
     
-    # Calculate risk with work-related adjustment
+    # Calculate risk score
     risk_scores = {'High': 3, 'Medium': 2, 'Low': 1}
     work_factor = 0.9 if work_related == 1 else 1.0
     
@@ -568,16 +613,13 @@ def analyze_risk_rule_based(age, daily_hours, work_related, start_year, primary_
         'mental_health': mental_health
     }
 
-# --- Main Risk Analysis Function (Uses model if available) ---
 def analyze_risk(age, daily_hours, work_related, start_year, primary_platform, sleep_hours, mental_health):
-    # Try model first
+    """Main risk analysis function (uses model if available)"""
     model_result = predict_with_model(age, daily_hours, work_related, start_year, 
                                      primary_platform, sleep_hours, mental_health)
     
     if model_result:
-        # Add the rule-based fields for compatibility
         result = model_result
-        # Add additional fields used elsewhere
         platform_risk_map = {
             'Telegram': 'High', 'YouTube': 'High', 'TikTok': 'High',
             'Instagram': 'High', 'Google': 'High', 'Facebook': 'Medium',
@@ -625,13 +667,14 @@ def analyze_risk(age, daily_hours, work_related, start_year, primary_platform, s
         
         return result
     else:
-        # Fall back to rule-based
         return analyze_risk_rule_based(age, daily_hours, work_related, start_year, 
                                        primary_platform, sleep_hours, mental_health)
 
-# --- Activity Logging Functions (with persistent DB) ---
-def get_db_connection():
-    return sqlite3.connect(get_db_path())
+# =============================================================================
+# DATABASE FUNCTIONS (with persistent storage)
+# =============================================================================
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
 def log_activity(activity_type, username, description, details=None):
     conn = get_db_connection()
@@ -642,6 +685,7 @@ def log_activity(activity_type, username, description, details=None):
               (activity_type, username, description, details, "web", datetime.now()))
     conn.commit()
     conn.close()
+    backup_database()  # Backup after important changes
 
 def log_risk_analysis(username, age, daily_hours, work_related, start_year, platform, sleep_hours, mental_health, risk_result):
     conn = get_db_connection()
@@ -672,7 +716,6 @@ def get_recent_logins(limit=20):
     conn.close()
     return df
 
-# --- Comment Functions ---
 def save_comment(name, email, comment):
     conn = get_db_connection()
     c = conn.cursor()
@@ -680,9 +723,9 @@ def save_comment(name, email, comment):
                  VALUES (?, ?, ?, ?, ?)''',
               (name, email, comment, 'pending', datetime.now()))
     conn.commit()
-    log_activity("comment", name, f"Submitted comment", comment[:50])
     conn.close()
-    return True
+    log_activity("comment", name, f"Submitted comment", comment[:50])
+    backup_database()
 
 def get_all_comments():
     conn = get_db_connection()
@@ -699,8 +742,8 @@ def update_comment_reply(comment_id, reply):
               (reply, datetime.now(), comment_id))
     conn.commit()
     conn.close()
+    backup_database()
 
-# --- User Feedback Functions ---
 def save_user_feedback(username, feedback_type, feedback_text):
     conn = get_db_connection()
     c = conn.cursor()
@@ -708,18 +751,14 @@ def save_user_feedback(username, feedback_type, feedback_text):
                  VALUES (?, ?, ?, ?)''',
               (username, feedback_type, feedback_text, datetime.now()))
     conn.commit()
-    log_activity("user_feedback", username, f"Submitted {feedback_type} feedback", feedback_text[:50])
     conn.close()
+    log_activity("user_feedback", username, f"Submitted {feedback_type} feedback", feedback_text[:50])
 
 def get_all_user_feedback():
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM user_feedback ORDER BY timestamp DESC", conn)
     conn.close()
     return df
-
-# --- Authentication Functions ---
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
 
 def check_login(username, password):
     conn = get_db_connection()
@@ -739,6 +778,7 @@ def update_last_login(username):
     c.execute("UPDATE users SET last_login=? WHERE username=?", (datetime.now(), username))
     conn.commit()
     conn.close()
+    backup_database()
 
 def create_user(username, password, is_admin=False):
     conn = get_db_connection()
@@ -749,6 +789,7 @@ def create_user(username, password, is_admin=False):
                  (username, hashed_pw, datetime.now(), 1 if is_admin else 0, None))
         conn.commit()
         log_activity("user_created", username, f"New user created by admin")
+        backup_database()
         return True
     except sqlite3.IntegrityError:
         return False
@@ -765,18 +806,18 @@ def save_model_feedback(data):
                data['usage_years'], data['sleep_hours'], data['mental_health'],
                data['predicted_risk'], data['feedback'], datetime.now()))
     conn.commit()
-    log_activity("model_feedback", data['username'], f"Gave {data['feedback']} feedback on prediction")
     conn.close()
+    log_activity("model_feedback", data['username'], f"Gave {data['feedback']} feedback on prediction")
+    backup_database()
     
     # Check if we should retrain the model
     conn = get_db_connection()
     count = conn.execute("SELECT COUNT(*) as count FROM feedback WHERE feedback='like'").fetchone()[0]
     conn.close()
     
-    if count % 20 == 0:  # Retrain every 20 new likes
+    if count % 20 == 0 and count > 0:
         train_model_from_feedback()
 
-# --- Enhanced Usage Tracking for Multiple Apps ---
 def save_usage_entry(username, date, app_name, hours, minutes, work_related):
     conn = get_db_connection()
     c = conn.cursor()
@@ -786,8 +827,9 @@ def save_usage_entry(username, date, app_name, hours, minutes, work_related):
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
               (username, date, app_name, hours, minutes, total_minutes, work_related, datetime.now()))
     conn.commit()
-    log_activity("usage_log", username, f"Logged {hours}h {minutes}m on {app_name}", f"Work:{work_related}")
     conn.close()
+    log_activity("usage_log", username, f"Logged {hours}h {minutes}m on {app_name}", f"Work:{work_related}")
+    backup_database()
 
 def get_user_usage_by_app(username, days=30):
     conn = get_db_connection()
@@ -813,7 +855,9 @@ def get_model_metrics():
     conn.close()
     return df.iloc[0] if not df.empty else None
 
-# --- Session State ---
+# =============================================================================
+# SESSION STATE
+# =============================================================================
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = None
@@ -823,7 +867,9 @@ if 'logged_in' not in st.session_state:
     st.session_state.dashboard_menu = "main"
     st.session_state.last_risk_result = None
 
-# --- LOGIN PAGE HEADER ---
+# =============================================================================
+# LOGIN PAGE HEADER
+# =============================================================================
 if not st.session_state.logged_in:
     st.markdown("""
     <div class="main-header">
@@ -833,7 +879,9 @@ if not st.session_state.logged_in:
     </div>
     """, unsafe_allow_html=True)
 
-# --- PUBLIC SECTION (No login) ---
+# =============================================================================
+# PUBLIC SECTION (No login)
+# =============================================================================
 if not st.session_state.logged_in:
     
     if st.session_state.public_menu is None:
@@ -1005,7 +1053,9 @@ if not st.session_state.logged_in:
     
     st.stop()
 
-# --- LOGGED IN SECTION ---
+# =============================================================================
+# LOGGED IN SECTION
+# =============================================================================
 with st.sidebar:
     st.markdown(f"""
     <div class="sidebar-header">
@@ -1030,9 +1080,12 @@ with st.sidebar:
         st.session_state.username = None
         st.session_state.is_admin = False
         st.session_state.page = "public"
+        backup_database()
         st.rerun()
 
-# --- DASHBOARD MAIN PAGE ---
+# =============================================================================
+# DASHBOARD MAIN PAGE
+# =============================================================================
 if st.session_state.dashboard_menu == "main":
     st.markdown("## 📋 Dashboard")
     st.markdown(f"Welcome back, {st.session_state.username}!")
@@ -1052,10 +1105,9 @@ if st.session_state.dashboard_menu == "main":
     with col3:
         st.metric("Feedback Given", feedback_count)
     
-    # Show model status
     model_data = load_model()
     if model_data:
-        st.success("✅ AdaBoost Model Active - Making ML-powered predictions")
+        st.success(f"✅ AdaBoost Model Active - {model_data['metrics']['training_samples']} training samples, {model_data['metrics']['accuracy']:.1%} accuracy")
     else:
         st.info("ℹ️ Using rule-based system (collecting feedback to train ML model)")
     
@@ -1105,7 +1157,9 @@ if st.session_state.dashboard_menu == "main":
                 st.session_state.dashboard_menu = "activity"
                 st.rerun()
 
-# --- RISK ANALYZER ---
+# =============================================================================
+# RISK ANALYZER
+# =============================================================================
 elif st.session_state.dashboard_menu == "analyzer":
     st.markdown("## 📊 Risk Analyzer")
     
@@ -1136,7 +1190,6 @@ elif st.session_state.dashboard_menu == "analyzer":
         
         log_risk_analysis(st.session_state.username, age, daily_hours, work_val, start_year, primary_platform, sleep_hours, mental_health, result['overall_risk'])
         
-        # Check if model was used
         model_data = load_model()
         confidence = result.get('confidence', 0.85)
         
@@ -1148,7 +1201,7 @@ elif st.session_state.dashboard_menu == "analyzer":
             st.markdown(f'<div class="risk-low"><h2>✅ LOW ADDICTION RISK</h2><p>Confidence: {confidence:.1%}</p></div>', unsafe_allow_html=True)
         
         if model_data:
-            st.info(f"🤖 Prediction made by AdaBoost ML model (trained on {model_data['metrics']['training_samples']} samples)")
+            st.info(f"🤖 Prediction made by AdaBoost ML model (trained on {model_data['metrics']['training_samples']} samples, {model_data['metrics']['accuracy']:.1%} accuracy)")
         
         st.markdown("### 💡 Personalized Recommendations")
         
@@ -1230,7 +1283,9 @@ elif st.session_state.dashboard_menu == "analyzer":
                 save_model_feedback(feedback_data)
                 st.info("📝 Thank you! This feedback helps us improve.")
 
-# --- RECOMMENDATIONS ---
+# =============================================================================
+# RECOMMENDATIONS
+# =============================================================================
 elif st.session_state.dashboard_menu == "recommendations":
     st.markdown("## 💡 Personalized Recommendations")
     
@@ -1292,7 +1347,9 @@ elif st.session_state.dashboard_menu == "recommendations":
             st.session_state.dashboard_menu = "analyzer"
             st.rerun()
 
-# --- PROFILE ---
+# =============================================================================
+# PROFILE
+# =============================================================================
 elif st.session_state.dashboard_menu == "profile":
     st.markdown("## 👤 My Profile")
     
@@ -1324,7 +1381,9 @@ elif st.session_state.dashboard_menu == "profile":
     with col6:
         st.metric("Feedback Given", feedback_count)
 
-# --- FEEDBACK FORM ---
+# =============================================================================
+# FEEDBACK FORM
+# =============================================================================
 elif st.session_state.dashboard_menu == "feedback_form":
     st.markdown("## 📝 Submit Feedback")
     
@@ -1353,7 +1412,9 @@ elif st.session_state.dashboard_menu == "feedback_form":
             else:
                 st.error("❌ Please enter feedback")
 
-# --- MY ACTIVITY ---
+# =============================================================================
+# MY ACTIVITY
+# =============================================================================
 elif st.session_state.dashboard_menu == "my_activity":
     st.markdown("## 📊 My Activity")
     
@@ -1397,7 +1458,9 @@ elif st.session_state.dashboard_menu == "my_activity":
         else:
             st.info("No risk analyses yet")
 
-# --- USAGE ANALYTICS (Enhanced with Multi-App Support) ---
+# =============================================================================
+# USAGE ANALYTICS
+# =============================================================================
 elif st.session_state.dashboard_menu == "analytics":
     st.markdown("## 📈 Usage Analytics")
     
@@ -1459,7 +1522,6 @@ elif st.session_state.dashboard_menu == "analytics":
         usage_df = get_user_usage_by_app(st.session_state.username, days)
         
         if not usage_df.empty:
-            # Calculate total usage per day (sum across apps)
             daily_total = usage_df.groupby('date')['total_minutes'].sum().reset_index()
             daily_total['hours'] = daily_total['total_minutes'] / 60
             
@@ -1515,7 +1577,6 @@ elif st.session_state.dashboard_menu == "analytics":
             display_df = display_df[['date', 'app_name', 'usage', 'type']].sort_values('date', ascending=False)
             st.dataframe(display_df, use_container_width=True)
             
-            # Export option
             if st.button("Download Data as CSV"):
                 csv = display_df.to_csv(index=False)
                 st.download_button(
@@ -1527,9 +1588,9 @@ elif st.session_state.dashboard_menu == "analytics":
         else:
             st.info("No usage history yet")
 
-# --- ADMIN PAGES ---
-
-# User Management
+# =============================================================================
+# ADMIN: USER MANAGEMENT
+# =============================================================================
 elif st.session_state.dashboard_menu == "user_management" and st.session_state.is_admin:
     st.markdown("## 👥 User Management")
     
@@ -1566,7 +1627,9 @@ elif st.session_state.dashboard_menu == "user_management" and st.session_state.i
     if not users_df.empty:
         st.dataframe(users_df, use_container_width=True)
 
-# Comments
+# =============================================================================
+# ADMIN: COMMENTS
+# =============================================================================
 elif st.session_state.dashboard_menu == "comments" and st.session_state.is_admin:
     st.markdown("## 💬 Public Comments")
     
@@ -1607,7 +1670,9 @@ elif st.session_state.dashboard_menu == "comments" and st.session_state.is_admin
     else:
         st.info("No comments yet")
 
-# Activity Log
+# =============================================================================
+# ADMIN: ACTIVITY LOG
+# =============================================================================
 elif st.session_state.dashboard_menu == "activity" and st.session_state.is_admin:
     st.markdown("## 📋 Activity Log")
     
@@ -1680,7 +1745,9 @@ elif st.session_state.dashboard_menu == "activity" and st.session_state.is_admin
         else:
             st.info("No model metrics yet - model hasn't been trained")
 
-# Model Feedback (Admin view)
+# =============================================================================
+# ADMIN: MODEL FEEDBACK
+# =============================================================================
 elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin:
     st.markdown("## 📊 Model Feedback Analysis")
     
@@ -1725,7 +1792,6 @@ elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin
                 accuracy = (likes / len(feedback_df)) * 100 if len(feedback_df) > 0 else 0
                 st.metric("User Agreement", f"{accuracy:.1f}%")
             
-            # Manual retrain button
             if st.button("🔄 Retrain Model Now", use_container_width=True):
                 with st.spinner("Training AdaBoost model..."):
                     result = train_model_from_feedback()
@@ -1753,19 +1819,19 @@ elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin
     
     with tab3:
         if not model_metrics_df.empty:
-            # Plot accuracy over time
             fig = px.line(model_metrics_df, x='timestamp', y=['accuracy', 'precision', 'recall', 'f1_score'],
                          title='Model Performance Over Time',
                          labels={'value': 'Score', 'timestamp': 'Training Date'})
             st.plotly_chart(fig, use_container_width=True)
-            
             st.dataframe(model_metrics_df, use_container_width=True)
         else:
             st.info("No model metrics yet - model hasn't been trained")
 
-# --- Footer ---
+# =============================================================================
+# FOOTER
+# =============================================================================
 st.markdown("""
 <footer>
-    Developed by Getaye Fiseha | AdaBoost Algorithm Machine Learning | © 2026 All Rights Reserved
+    Developed by Getaye Fiseha | Using AdaBoost Algorithm Machine Learning | Addis Ababa University | © 2026 All Rights Reserved
 </footer>
 """, unsafe_allow_html=True)
