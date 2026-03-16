@@ -278,7 +278,50 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# DATABASE INITIALIZATION (with persistent storage)
+# AUTHENTICATION FUNCTIONS (MUST COME BEFORE init_db)
+# =============================================================================
+def hash_password(password):
+    """Hash password using SHA-256"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def check_login(username, password):
+    conn = get_db_connection()
+    c = conn.cursor()
+    hashed_pw = hash_password(password)
+    user = c.execute("SELECT * FROM users WHERE username=? AND password=?", 
+                    (username, hashed_pw)).fetchone()
+    if user:
+        update_last_login(username)
+        log_activity("login", username, "User logged in")
+    conn.close()
+    return user
+
+def update_last_login(username):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("UPDATE users SET last_login=? WHERE username=?", (datetime.now(), username))
+    conn.commit()
+    conn.close()
+    backup_database()
+
+def create_user(username, password, is_admin=False):
+    conn = get_db_connection()
+    c = conn.cursor()
+    try:
+        hashed_pw = hash_password(password)
+        c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
+                 (username, hashed_pw, datetime.now(), 1 if is_admin else 0, None))
+        conn.commit()
+        log_activity("user_created", username, f"New user created by admin")
+        backup_database()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+# =============================================================================
+# DATABASE INITIALIZATION (NOW CAN USE hash_password)
 # =============================================================================
 def init_db():
     """Initialize database with all tables"""
@@ -375,9 +418,10 @@ def init_db():
     # Create admin user if not exists
     admin_exists = c.execute("SELECT * FROM users WHERE username='getaye'").fetchone()
     if not admin_exists:
-        hashed_pw = hash_password("Getaye@2827")
+        hashed_pw = hash_password("Getaye@2827")  # NOW hash_password is defined!
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
                  ("getaye", hashed_pw, datetime.now(), 1, None))
+        print("✅ Admin user 'getaye' created")
     
     conn.commit()
     
@@ -671,11 +715,8 @@ def analyze_risk(age, daily_hours, work_related, start_year, primary_platform, s
                                        primary_platform, sleep_hours, mental_health)
 
 # =============================================================================
-# DATABASE FUNCTIONS (with persistent storage)
+# DATABASE FUNCTIONS
 # =============================================================================
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
 def log_activity(activity_type, username, description, details=None):
     conn = get_db_connection()
     c = conn.cursor()
@@ -759,42 +800,6 @@ def get_all_user_feedback():
     df = pd.read_sql_query("SELECT * FROM user_feedback ORDER BY timestamp DESC", conn)
     conn.close()
     return df
-
-def check_login(username, password):
-    conn = get_db_connection()
-    c = conn.cursor()
-    hashed_pw = hash_password(password)
-    user = c.execute("SELECT * FROM users WHERE username=? AND password=?", 
-                    (username, hashed_pw)).fetchone()
-    if user:
-        update_last_login(username)
-        log_activity("login", username, "User logged in")
-    conn.close()
-    return user
-
-def update_last_login(username):
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("UPDATE users SET last_login=? WHERE username=?", (datetime.now(), username))
-    conn.commit()
-    conn.close()
-    backup_database()
-
-def create_user(username, password, is_admin=False):
-    conn = get_db_connection()
-    c = conn.cursor()
-    try:
-        hashed_pw = hash_password(password)
-        c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
-                 (username, hashed_pw, datetime.now(), 1 if is_admin else 0, None))
-        conn.commit()
-        log_activity("user_created", username, f"New user created by admin")
-        backup_database()
-        return True
-    except sqlite3.IntegrityError:
-        return False
-    finally:
-        conn.close()
 
 def save_model_feedback(data):
     conn = get_db_connection()
@@ -1832,6 +1837,6 @@ elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin
 # =============================================================================
 st.markdown("""
 <footer>
-    Developed by Getaye Fiseha | Using AdaBoost Algorithm Machine Learning | Addis Ababa University | © 2026 All Rights Reserved
+    Developed by Getaye Fiseha | Using AdaBoost Algorithm Machine Learning Technique | Addis Ababa University | © 2026 All Rights Reserved
 </footer>
 """, unsafe_allow_html=True)
