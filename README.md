@@ -15,7 +15,7 @@ pinned: false
 [![Hugging Face Spaces](https://img.shields.io/badge/🤗%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/Getaye/social-media-addiction-analyzer)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-black)](https://github.com/Getaye/social-media-addiction-analyzer)
 
-**Machine Learning Course Project | COSC 6041 | College of Natural and Computational Sciences**
+**Machine Learning Course Project | COSC 6041 | College of Natural and Computational Sciences | Addis Ababa University**
 
 A production-ready web application that uses the **AdaBoost (Adaptive Boosting) algorithm** to predict social media addiction risk based on behavioral patterns. The model analyzes factors like daily usage, sleep patterns, mental health, and platform choice to classify users into **Low**, **Moderate**, or **High** risk categories.
 
@@ -53,7 +53,12 @@ Try the live application on Hugging Face Spaces:
 4. Sleep Hours
 5. Age of First Use
 
+### To Run on Github Codespaces
+# Install all required packages
+pip install streamlit pandas numpy plotly scikit-learn joblib
 
+# Then run the app
+streamlit run app.py
 
 ## 🛠️ Technical Stack
 
@@ -67,7 +72,8 @@ Try the live application on Hugging Face Spaces:
 
 ```text
 .
-├── .github/workflows/deploy.yml  # Auto-sync to HF
+├── .github/workflows/deploy.yml # Auto-sync to HF
 ├── app.py                       # Streamlit Application, Trained Model File and Training Data
 ├── requirements.txt             # Dependencies
+├── SMARA.pptx                   # Presentation
 └── README.md                    # Project Documentation
