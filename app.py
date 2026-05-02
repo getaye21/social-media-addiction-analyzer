@@ -15,9 +15,9 @@ from sklearn.ensemble import AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-# =============================================================================
-# SQLITE DATETIME ADAPTER (Python 3.12+)
-# =============================================================================
+# ----------------------------------------------------------------------
+# SQLite datetime adapter (Python 3.12+)
+# ----------------------------------------------------------------------
 def adapt_datetime(dt):
     return dt.isoformat()
 
@@ -32,9 +32,9 @@ def convert_datetime(s):
 sqlite3.register_adapter(datetime, adapt_datetime)
 sqlite3.register_converter("timestamp", convert_datetime)
 
-# =============================================================================
-# PERSISTENT STORAGE (Hugging Face /data)
-# =============================================================================
+# ----------------------------------------------------------------------
+# Persistent storage on Hugging Face
+# ----------------------------------------------------------------------
 def get_db_path():
     if os.path.exists('/data'):
         db_path = '/data/users.db'
@@ -77,9 +77,9 @@ def restore_from_backup():
             print(f"⚠️ Restore failed: {e}")
     return False
 
-# =============================================================================
-# SYNTHETIC DATA & ADABOOST MODEL TRAINING
-# =============================================================================
+# ----------------------------------------------------------------------
+# Synthetic dataset generation (used for initial training & retraining)
+# ----------------------------------------------------------------------
 def generate_synthetic_data(n_samples=5000, random_seed=42):
     np.random.seed(random_seed)
     data = {
@@ -158,7 +158,7 @@ def generate_initial_model():
     return train_and_save_model(X_syn, y_syn, synthetic_flag=True)
 
 def train_model_from_feedback():
-    """Retrain using synthetic + all real 'like' feedback (additional optimization)."""
+    """Retrain using synthetic + all real 'like' feedback (called after each like)."""
     X_syn, y_syn = generate_synthetic_data(n_samples=5000, random_seed=42)
 
     conn = get_db_connection()
@@ -196,9 +196,9 @@ def train_model_from_feedback():
     print(f"Retraining AdaBoost on synthetic ({len(X_syn)}) + {len(X_real)} real feedback")
     return train_and_save_model(X_combined, y_combined, synthetic_flag=False)
 
-# =============================================================================
-# MODEL LOADING & PREDICTION
-# =============================================================================
+# ----------------------------------------------------------------------
+# Model loading & prediction
+# ----------------------------------------------------------------------
 def load_model():
     path = get_model_path()
     if os.path.exists(path):
@@ -326,9 +326,9 @@ def analyze_risk(age, daily_hours, work_related, start_year,
         return analyze_risk_rule_based(age, daily_hours, work_related, start_year,
                                        primary_platform, sleep_hours, mental_health)
 
-# =============================================================================
-# AUTHENTICATION & DATABASE FUNCTIONS (original, adapted to use get_db_connection)
-# =============================================================================
+# ----------------------------------------------------------------------
+# AUTHENTICATION & DATABASE FUNCTIONS
+# ----------------------------------------------------------------------
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -466,14 +466,18 @@ def save_model_feedback(data):
     log_activity("model_feedback", data['username'], f"Gave {data['feedback']} feedback on prediction")
     backup_database()
 
-    # Trigger retraining after every 20 likes (additional optimization)
-    conn = get_db_connection()
-    count = conn.execute("SELECT COUNT(*) as count FROM feedback WHERE feedback='like'").fetchone()[0]
-    conn.close()
-    if count % 20 == 0 and count > 0:
-        with st.spinner("Adaptive retraining in progress..."):
-            train_model_from_feedback()
-            st.success("✅ Model retrained with new feedback!")
+    # ==============================================================
+    # RETRAIN AFTER EVERY "LIKE" FEEDBACK (immediate adaptation)
+    # ==============================================================
+    if data['feedback'] == 'like':
+        with st.spinner("📈 Adapting model with your feedback... (one moment)"):
+            result = train_model_from_feedback()
+            if result:
+                st.success(f"✅ Model updated! New accuracy: {result['metrics']['accuracy']:.2%}")
+                # Show a small notification (optional)
+                st.toast("Model improved with your feedback!", icon="🎯")
+            else:
+                st.info("ℹ️ Model will update after more feedback.")
 
 def save_usage_entry(username, log_date, app_name, hours, minutes, work_related):
     conn = get_db_connection()
@@ -512,9 +516,9 @@ def get_model_metrics():
     conn.close()
     return df.iloc[0] if not df.empty else None
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # DATABASE INITIALIZATION (tables + initial model)
-# =============================================================================
+# ----------------------------------------------------------------------
 def init_db():
     restore_from_backup()
     conn = get_db_connection()
@@ -569,9 +573,9 @@ def init_db():
 
 init_db()
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # CUSTOM CSS (full original styling)
-# =============================================================================
+# ----------------------------------------------------------------------
 st.markdown("""
 <style>
     .stSelectbox label, .stSelectbox div[data-baseweb="select"] span {
@@ -719,9 +723,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # SESSION STATE
-# =============================================================================
+# ----------------------------------------------------------------------
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = None
@@ -731,9 +735,9 @@ if 'logged_in' not in st.session_state:
     st.session_state.dashboard_menu = "main"
     st.session_state.last_risk_result = None
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # LOGIN PAGE HEADER
-# =============================================================================
+# ----------------------------------------------------------------------
 if not st.session_state.logged_in:
     st.markdown("""
     <div class="main-header">
@@ -743,9 +747,9 @@ if not st.session_state.logged_in:
     </div>
     """, unsafe_allow_html=True)
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # PUBLIC SECTION (No login)
-# =============================================================================
+# ----------------------------------------------------------------------
 if not st.session_state.logged_in:
     if st.session_state.public_menu is None:
         st.markdown("## 👋 Welcome to Social Media Addiction Risk Analyzer")
@@ -885,9 +889,9 @@ if not st.session_state.logged_in:
                 st.rerun()
     st.stop()
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # LOGGED IN SECTION
-# =============================================================================
+# ----------------------------------------------------------------------
 with st.sidebar:
     st.markdown(f"""
     <div class="sidebar-header">
@@ -911,9 +915,9 @@ with st.sidebar:
         backup_database()
         st.rerun()
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # DASHBOARD MAIN PAGE
-# =============================================================================
+# ----------------------------------------------------------------------
 if st.session_state.dashboard_menu == "main":
     st.markdown("## 📋 Dashboard")
     st.markdown(f"Welcome back, {st.session_state.username}!")
@@ -974,9 +978,9 @@ if st.session_state.dashboard_menu == "main":
                 st.session_state.dashboard_menu = "activity"
                 st.rerun()
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # RISK ANALYZER
-# =============================================================================
+# ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "analyzer":
     st.markdown("## 📊 Risk Analyzer")
     if st.button("← Back to Dashboard", key="back_analyzer"):
@@ -1058,7 +1062,7 @@ elif st.session_state.dashboard_menu == "analyzer":
                 <li><strong>👍 Yes, Accurate:</strong> Confirms the prediction was correct - reinforces what the model got right</li>
                 <li><strong>👎 No, Inaccurate:</strong> Flags an incorrect prediction - helps the model learn from mistakes</li>
             </ul>
-            <p>Every 20 new "Yes" feedback triggers model retraining for improved accuracy!</p>
+            <p><strong>Your feedback is used immediately to improve the model!</strong> (retrains after every "Yes")</p>
         </div>
         """, unsafe_allow_html=True)
         col_f1, col_f2 = st.columns(2)
@@ -1072,7 +1076,6 @@ elif st.session_state.dashboard_menu == "analyzer":
                     'feedback': 'like'
                 }
                 save_model_feedback(feedback_data)
-                st.success("✅ Thank you! Your feedback helps improve the model.")
         with col_f2:
             if st.button("👎 No, Inaccurate", key="unlike", use_container_width=True):
                 feedback_data = {
@@ -1083,11 +1086,10 @@ elif st.session_state.dashboard_menu == "analyzer":
                     'feedback': 'unlike'
                 }
                 save_model_feedback(feedback_data)
-                st.info("📝 Thank you! This feedback helps us improve.")
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # RECOMMENDATIONS
-# =============================================================================
+# ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "recommendations":
     st.markdown("## 💡 Personalized Recommendations")
     if st.button("← Back to Dashboard", key="back_recommend"):
@@ -1145,9 +1147,9 @@ elif st.session_state.dashboard_menu == "recommendations":
             st.session_state.dashboard_menu = "analyzer"
             st.rerun()
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # PROFILE
-# =============================================================================
+# ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "profile":
     st.markdown("## 👤 My Profile")
     if st.button("← Back to Dashboard", key="back_profile"):
@@ -1174,9 +1176,9 @@ elif st.session_state.dashboard_menu == "profile":
     with col6:
         st.metric("Feedback Given", feedback_count)
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # FEEDBACK FORM
-# =============================================================================
+# ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "feedback_form":
     st.markdown("## 📝 Submit Feedback")
     if st.button("← Back to Dashboard", key="back_feedback_form"):
@@ -1200,9 +1202,9 @@ elif st.session_state.dashboard_menu == "feedback_form":
             else:
                 st.error("❌ Please enter feedback")
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # MY ACTIVITY
-# =============================================================================
+# ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "my_activity":
     st.markdown("## 📊 My Activity")
     if st.button("← Back to Dashboard", key="back_my_activity"):
@@ -1240,9 +1242,9 @@ elif st.session_state.dashboard_menu == "my_activity":
         else:
             st.info("No risk analyses yet")
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # USAGE ANALYTICS
-# =============================================================================
+# ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "analytics":
     st.markdown("## 📈 Usage Analytics")
     if st.button("← Back to Dashboard", key="back_analytics"):
@@ -1349,9 +1351,9 @@ elif st.session_state.dashboard_menu == "analytics":
         else:
             st.info("No usage history yet")
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # ADMIN: USER MANAGEMENT
-# =============================================================================
+# ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "user_management" and st.session_state.is_admin:
     st.markdown("## 👥 User Management")
     if st.button("← Back to Dashboard", key="back_user_mgt"):
@@ -1383,9 +1385,9 @@ elif st.session_state.dashboard_menu == "user_management" and st.session_state.i
     if not users_df.empty:
         st.dataframe(users_df, use_container_width=True)
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # ADMIN: COMMENTS
-# =============================================================================
+# ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "comments" and st.session_state.is_admin:
     st.markdown("## 💬 Public Comments")
     if st.button("← Back to Dashboard", key="back_comments"):
@@ -1421,9 +1423,9 @@ elif st.session_state.dashboard_menu == "comments" and st.session_state.is_admin
     else:
         st.info("No comments yet")
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # ADMIN: ACTIVITY LOG
-# =============================================================================
+# ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "activity" and st.session_state.is_admin:
     st.markdown("## 📋 Activity Log")
     if st.button("← Back to Dashboard", key="back_activity_log"):
@@ -1488,9 +1490,9 @@ elif st.session_state.dashboard_menu == "activity" and st.session_state.is_admin
         else:
             st.info("No model metrics yet - model hasn't been trained")
 
-# =============================================================================
-# ADMIN: MODEL FEEDBACK
-# =============================================================================
+# ----------------------------------------------------------------------
+# ADMIN: MODEL FEEDBACK (shows all entries, with retrain button)
+# ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin:
     st.markdown("## 📊 Model Feedback Analysis")
     if st.button("← Back to Dashboard", key="back_feedback"):
@@ -1505,64 +1507,42 @@ elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin
             <li><strong>👍 Likes:</strong> Predictions users confirmed as accurate - used for training</li>
             <li><strong>👎 Unlikes:</strong> Predictions users flagged as inaccurate - used for error analysis</li>
         </ul>
-        <p>The AdaBoost model retrains automatically every 20 new "like" feedback!</p>
+        <p><strong>The model retrains automatically after every "like" feedback.</strong></p>
     </div>
     """, unsafe_allow_html=True)
     conn = get_db_connection()
-    feedback_df = pd.read_sql_query("SELECT * FROM feedback ORDER BY timestamp DESC", conn)
-    user_feedback_df = pd.read_sql_query("SELECT * FROM user_feedback ORDER BY timestamp DESC", conn)
-    model_metrics_df = pd.read_sql_query("SELECT * FROM model_metrics ORDER BY timestamp DESC", conn)
+    total_feedback = conn.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
+    like_count = conn.execute("SELECT COUNT(*) FROM feedback WHERE feedback='like'").fetchone()[0]
+    unlike_count = conn.execute("SELECT COUNT(*) FROM feedback WHERE feedback='unlike'").fetchone()[0]
     conn.close()
-    tab1, tab2, tab3 = st.tabs(["🤖 Model Feedback (Likes/Unlikes)", "📝 User Suggestions", "📊 Model Performance History"])
-    with tab1:
-        if not feedback_df.empty:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Total Feedback", len(feedback_df))
-            with col2:
-                likes = len(feedback_df[feedback_df['feedback'] == 'like'])
-                st.metric("👍 Likes", likes)
-            with col3:
-                unlikes = len(feedback_df[feedback_df['feedback'] == 'unlike'])
-                st.metric("👎 Unlikes", unlikes)
-            with col4:
-                accuracy = (likes / len(feedback_df)) * 100 if len(feedback_df) > 0 else 0
-                st.metric("User Agreement", f"{accuracy:.1f}%")
-            if st.button("🔄 Retrain Model Now", use_container_width=True):
-                with st.spinner("Training AdaBoost model..."):
-                    result = train_model_from_feedback()
-                    if result:
-                        st.success(f"✅ Model retrained! New accuracy: {result['metrics']['accuracy']:.2%}")
-                    else:
-                        st.warning("⚠️ Need at least 20 'like' feedback samples to train")
-            st.dataframe(feedback_df, use_container_width=True)
-        else:
-            st.info("No model feedback yet")
-    with tab2:
-        if not user_feedback_df.empty:
-            for _, row in user_feedback_df.iterrows():
-                st.markdown(f"""
-                <div class="activity-card">
-                    <strong>{row['feedback_type']}</strong> - {row['username']}<br>
-                    {row['feedback_text']}<br>
-                    <span class="activity-time">{row['timestamp']}</span>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("No user suggestions yet")
-    with tab3:
-        if not model_metrics_df.empty:
-            fig = px.line(model_metrics_df, x='timestamp', y=['accuracy', 'precision', 'recall', 'f1_score'],
-                         title='Model Performance Over Time',
-                         labels={'value': 'Score', 'timestamp': 'Training Date'})
-            st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(model_metrics_df, use_container_width=True)
-        else:
-            st.info("No model metrics yet - model hasn't been trained")
 
-# =============================================================================
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📊 Total Feedback", total_feedback)
+    with col2:
+        st.metric("👍 Likes", like_count)
+    with col3:
+        st.metric("👎 Unlikes", unlike_count)
+
+    if total_feedback == 0:
+        st.warning("⚠️ No feedback has been collected yet. Ask users to click 'Yes' or 'No' after a risk analysis.")
+    else:
+        conn = get_db_connection()
+        feedback_df = pd.read_sql_query("SELECT * FROM feedback ORDER BY timestamp DESC", conn)
+        conn.close()
+        st.dataframe(feedback_df, use_container_width=True)
+
+        if st.button("🔄 Retrain Model Now (forced)", use_container_width=True):
+            with st.spinner("Retraining AdaBoost model with all available 'like' feedback..."):
+                result = train_model_from_feedback()
+                if result:
+                    st.success(f"✅ Model retrained! New accuracy: {result['metrics']['accuracy']:.2%}")
+                else:
+                    st.warning("⚠️ Need at least one 'like' feedback to retrain.")
+
+# ----------------------------------------------------------------------
 # FOOTER
-# =============================================================================
+# ----------------------------------------------------------------------
 st.markdown("""
 <footer>
     Developed by Getaye Fiseha | Using AdaBoost Algorithm Machine Learning Technique | Addis Ababa University | © 2026
