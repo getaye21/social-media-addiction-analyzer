@@ -14,10 +14,12 @@ jobs:
         with:
           lfs: true
 
-      - name: Upload to Hugging Face Space
-        uses: huggingface/hub-actions/upload@main
-        with:
-          token: ${{ secrets.github-deploy }}
-          repo_id: Getaye/social-media-addiction-analyzer
-          repo_type: space
-          path: .
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.github-deploy }}
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+          # Push directly using the token
+          git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main --force
