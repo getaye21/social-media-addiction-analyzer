@@ -63,29 +63,18 @@ def backup_database():
         except:
             pass
 
-def restore_from_backup():
-    db_path, backup_path = get_db_path()
-    if not os.path.exists(db_path) and os.path.exists(backup_path):
-        try:
-            shutil.copy2(backup_path, db_path)
-            return True
-        except:
-            pass
-    return False
-
 # ----------------------------------------------------------------------
-# Load or generate synthetic dataset (always works)
+# Load or generate synthetic dataset (50k rows)
 # ----------------------------------------------------------------------
 @st.cache_resource
 def load_synthetic_dataset():
-    # First try to load the user‑provided CSV
-    if os.path.exists('social_media_addiction_data.csv'):
-        df = pd.read_csv('social_media_addiction_data.csv')
-        st.info(f"✅ Using your CSV with {len(df):,} rows.")
+    csv_path = 'social_media_addiction_data.csv'
+    if os.path.exists(csv_path):
+        df = pd.read_csv(csv_path)
+        st.info(f"✅ Loaded {len(df):,} rows from CSV")
         return df
     else:
-        # Generate a realistic fallback dataset (50k rows)
-        st.warning("⚠️ CSV not found – generating synthetic dataset (50k rows). Please upload your CSV later.")
+        st.warning("⚠️ CSV not found – generating synthetic dataset (50k rows). This will take a few seconds.")
         np.random.seed(42)
         n = 50000
         data = {
@@ -99,28 +88,24 @@ def load_synthetic_dataset():
             'platform': np.random.choice(['TikTok','Instagram','YouTube','Facebook','WhatsApp','Telegram','Snapchat','Twitter','LinkedIn','Google','Other'], n),
         }
         df = pd.DataFrame(data)
-        # Add target based on your PPTX rules (usage double weight, platform 1.5x)
+
+        # Add target based on weighted risk (usage double, platform 1.5x)
         def risk_score(row):
-            # usage risk
             if row['work_related'] == 0:
                 usage = 3 if row['daily_hours'] > 3 else (2 if row['daily_hours'] > 2 else 1)
             else:
                 usage = 3 if row['daily_hours'] > 5 else (2 if row['daily_hours'] > 3 else 1)
-            # experience risk
             exp = 3 if row['usage_years'] > 5 else (2 if row['usage_years'] > 2 else 1)
-            # sleep risk
             sleep = 3 if row['sleep_hours'] < 6 else (2 if row['sleep_hours'] < 7 else 1)
-            # mental health risk
             mental = 3 if row['mental_health'] < 4 else (2 if row['mental_health'] < 7 else 1)
-            # platform risk
             plat_map = {'Telegram':3,'YouTube':3,'TikTok':3,'Instagram':3,'Google':3,
                         'Facebook':2,'LinkedIn':2,'Snapchat':2,'WhatsApp':1,'Twitter':1,'Other':1}
             plat = plat_map.get(row['platform'], 2)
             total = (usage * 2 + plat * 1.5 + exp + sleep + mental) / 6.5
             return 2 if total > 2.3 else (1 if total > 1.5 else 0)
         df['target'] = df.apply(risk_score, axis=1)
-        df.to_csv('social_media_addiction_data.csv', index=False)
-        st.success("✅ Fallback dataset generated and saved.")
+        df.to_csv(csv_path, index=False)
+        st.success("✅ Synthetic dataset generated and saved.")
         return df
 
 # ----------------------------------------------------------------------
@@ -174,7 +159,6 @@ def train_and_save_model(X, y, synthetic_flag=True):
     }
     joblib.dump(model_data, get_model_path())
 
-    # Log metrics to database
     conn = get_db_connection()
     c = conn.cursor()
     c.execute('''INSERT INTO model_metrics
@@ -342,7 +326,7 @@ def analyze_risk(age, daily_hours, work_related, start_year,
                                        primary_platform, sleep_hours, mental_health)
 
 # ----------------------------------------------------------------------
-# Authentication and database functions (your existing code)
+# Authentication and database functions (unchanged from your original, with feedback fix)
 # ----------------------------------------------------------------------
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -469,28 +453,35 @@ def get_all_user_feedback():
     return df
 
 def save_model_feedback(data):
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('''INSERT INTO feedback
-                 (username, age, daily_hours, work_related, platform, usage_years, sleep_hours, mental_health, predicted_risk, feedback, timestamp)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-              (data['username'], data['age'], data['daily_hours'], data['work_related'], data['platform'],
-               data['usage_years'], data['sleep_hours'], data['mental_health'],
-               data['predicted_risk'], data['feedback'], datetime.now()))
-    conn.commit()
-    conn.close()
-    log_activity("model_feedback", data['username'], f"Gave {data['feedback']} feedback on prediction")
-    backup_database()
+    # Debug print (visible in Hugging Face container logs)
+    print(f"🔍 save_model_feedback called with feedback={data['feedback']} for user {data['username']}")
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('''INSERT INTO feedback
+                     (username, age, daily_hours, work_related, platform, usage_years, sleep_hours, mental_health, predicted_risk, feedback, timestamp)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                  (data['username'], data['age'], data['daily_hours'], data['work_related'], data['platform'],
+                   data['usage_years'], data['sleep_hours'], data['mental_health'],
+                   data['predicted_risk'], data['feedback'], datetime.now()))
+        conn.commit()
+        conn.close()
+        log_activity("model_feedback", data['username'], f"Gave {data['feedback']} feedback on prediction")
+        backup_database()
+        print(f"✅ Feedback saved successfully to database")
 
-    # Retrain after every "like"
-    if data['feedback'] == 'like':
-        with st.spinner("📈 Adapting model with your feedback (this may take a few seconds)..."):
-            result = train_model_from_feedback()
-            if result:
-                st.success(f"✅ Model updated! New accuracy: {result['metrics']['accuracy']:.2%}")
-                st.toast("Model improved with your feedback!", icon="🎯")
-            else:
-                st.info("ℹ️ Not enough new data yet – model unchanged.")
+        # Retrain after every "like"
+        if data['feedback'] == 'like':
+            with st.spinner("📈 Adapting model with your feedback (this may take a few seconds)..."):
+                result = train_model_from_feedback()
+                if result:
+                    st.success(f"✅ Model updated! New accuracy: {result['metrics']['accuracy']:.2%}")
+                    st.toast("Model improved with your feedback!", icon="🎯")
+                else:
+                    st.info("ℹ️ Not enough new data yet – model unchanged.")
+    except Exception as e:
+        print(f"❌ Error saving feedback: {e}")
+        st.error(f"Failed to save feedback: {e}")
 
 def save_usage_entry(username, log_date, app_name, hours, minutes, work_related):
     conn = get_db_connection()
@@ -584,7 +575,7 @@ def init_db():
 init_db()
 
 # ----------------------------------------------------------------------
-# CUSTOM CSS (full original styling)
+# CSS (full original styling)
 # ----------------------------------------------------------------------
 st.markdown("""
 <style>
