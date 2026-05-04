@@ -1,4 +1,4 @@
-name: Sync to Hugging Face
+name: Sync to Hugging Face hub
 
 on:
   push:
@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  sync:
+  sync-to-hub:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           lfs: true
@@ -19,8 +19,12 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git config --global user.email "actions@github.com"
+          git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
-
-          git remote add hf https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer
-          git push --force hf main
+          
+          echo "Token length: ${#HF_TOKEN}"
+          echo "First 4 chars: ${HF_TOKEN:0:4}..."
+          
+          # This will show the real error
+          set -x
+          git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main --force
