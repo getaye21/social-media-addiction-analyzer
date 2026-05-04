@@ -1,4 +1,4 @@
-name: Sync to Hugging Face hub
+name: Sync to Hugging Face
 
 on:
   push:
@@ -6,25 +6,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  sync-to-hub:
+  sync:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           lfs: true
 
-      - name: Push to Hugging Face
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "GitHub Actions"
-          
-          echo "Token length: ${#HF_TOKEN}"
-          echo "First 4 chars: ${HF_TOKEN:0:4}..."
-          
-          # This will show the real error
-          set -x
-          git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main --force
+      - name: Upload to Hugging Face Space
+        uses: huggingface/hub-actions/upload@main
+        with:
+          token: ${{ secrets.github-deploy }}
+          repo_id: Getaye/social-media-addiction-analyzer
+          repo_type: space
+          path: .
