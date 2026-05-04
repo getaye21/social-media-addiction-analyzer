@@ -6,7 +6,6 @@ import hashlib
 import sqlite3
 import plotly.graph_objects as go
 import plotly.express as px
-from datetime import datetime
 import time
 import os
 import shutil
@@ -78,49 +77,52 @@ def restore_from_backup():
     return False
 
 # ----------------------------------------------------------------------
-# Synthetic dataset generation (used for initial training & retraining)
+# Load the pre‑generated 50k synthetic dataset
 # ----------------------------------------------------------------------
-def generate_synthetic_data(n_samples=5000, random_seed=42):
-    np.random.seed(random_seed)
-    data = {
-        'age': np.random.randint(13, 50, n_samples),
-        'daily_hours': np.random.uniform(0.5, 15.0, n_samples),
-        'work_related': np.random.choice([0, 1], n_samples, p=[0.7, 0.3]),
-        'sleep_hours': np.random.uniform(3.0, 10.0, n_samples),
-        'mental_health': np.random.randint(1, 11, n_samples),
-        'usage_years': np.random.uniform(0.5, 15.0, n_samples),
-    }
-    df = pd.DataFrame(data)
+@st.cache_resource
+def load_synthetic_dataset():
+    if os.path.exists('social_media_addiction_data.csv'):
+        df = pd.read_csv('social_media_addiction_data.csv')
+        st.success(f"✅ Loaded {len(df):,} synthetic rows from CSV")
+        return df
+    else:
+        st.error("❌ Missing 'social_media_addiction_data.csv'. Please upload it to the same folder.")
+        st.stop()
 
-    # Risk score based on expert rules
-    risk_score = (
-        df['daily_hours'] * 0.4 +
-        (10 - df['sleep_hours']) * 0.2 +
-        (10 - df['mental_health']) * 0.3 +
-        df['usage_years'] * 0.1
-    )
-    platforms = ['TikTok', 'Instagram', 'YouTube', 'Facebook', 'WhatsApp']
-    df['platform'] = np.random.choice(platforms, n_samples)
-    platform_risk = {'TikTok': 1.2, 'Instagram': 1.1, 'YouTube': 1.1,
-                     'Facebook': 1.0, 'WhatsApp': 0.9}
-    df['platform_risk_factor'] = df['platform'].map(platform_risk)
-    risk_score = risk_score * df['platform_risk_factor']
-    risk_score = (risk_score - risk_score.min()) / (risk_score.max() - risk_score.min()) * 10
-    df['target'] = pd.cut(risk_score, bins=[0, 4, 7, 10], labels=[0, 1, 2])
-
+# ----------------------------------------------------------------------
+# Feature engineering (must match the dataset generator)
+# ----------------------------------------------------------------------
+def prepare_features(df):
+    # All possible platforms (including those that may appear in real feedback)
+    all_platforms = [
+        'TikTok', 'Instagram', 'YouTube', 'Facebook', 'WhatsApp',
+        'Telegram', 'Snapchat', 'Twitter', 'LinkedIn', 'Google', 'Other'
+    ]
     platform_dummies = pd.get_dummies(df['platform'], prefix='platform')
-    X = pd.concat([df[['age', 'daily_hours', 'work_related', 'sleep_hours',
-                       'mental_health', 'usage_years']],
-                   platform_dummies], axis=1)
+    for plat in all_platforms:
+        col = f'platform_{plat}'
+        if col not in platform_dummies.columns:
+            platform_dummies[col] = 0
+    numerical = df[['age', 'daily_hours', 'work_related', 'sleep_hours',
+                    'mental_health', 'usage_years']]
+    X = pd.concat([numerical, platform_dummies], axis=1)
     y = df['target']
     return X, y
 
+# ----------------------------------------------------------------------
+# Train AdaBoost (200 estimators) and save model
+# ----------------------------------------------------------------------
 def train_and_save_model(X, y, synthetic_flag=True):
     base_learner = DecisionTreeClassifier(max_depth=2, random_state=42)
-    model = AdaBoostClassifier(estimator=base_learner, n_estimators=200,
-                               learning_rate=0.8, random_state=42)
+    model = AdaBoostClassifier(
+        estimator=base_learner,
+        n_estimators=200,
+        learning_rate=0.8,
+        random_state=42
+    )
     model.fit(X, y)
 
+    # Evaluation stats (on the same training set – just for info)
     y_pred = model.predict(X)
     acc = accuracy_score(y, y_pred)
     prec = precision_score(y, y_pred, average='weighted', zero_division=0)
@@ -142,9 +144,10 @@ def train_and_save_model(X, y, synthetic_flag=True):
     }
     joblib.dump(model_data, get_model_path())
 
+    # Log metrics to database
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute('''INSERT INTO model_metrics 
+    c.execute('''INSERT INTO model_metrics
                  (accuracy, precision, recall, f1_score, training_samples, timestamp)
                  VALUES (?, ?, ?, ?, ?, ?)''',
               (acc, prec, rec, f1, len(X), datetime.now()))
@@ -152,52 +155,57 @@ def train_and_save_model(X, y, synthetic_flag=True):
     conn.close()
     return model_data
 
+# ----------------------------------------------------------------------
+# Initial model: train on the full 50k synthetic dataset
+# ----------------------------------------------------------------------
 def generate_initial_model():
-    st.info("Initializing AdaBoost model with synthetic data...")
-    X_syn, y_syn = generate_synthetic_data(n_samples=5000, random_seed=42)
-    return train_and_save_model(X_syn, y_syn, synthetic_flag=True)
+    st.info("Training initial AdaBoost model on 50,000 synthetic rows (200 estimators)...")
+    df = load_synthetic_dataset()
+    X, y = prepare_features(df)
+    return train_and_save_model(X, y, synthetic_flag=True)
 
+# ----------------------------------------------------------------------
+# Adaptive retraining: synthetic 50k + all real "like" feedback
+# ----------------------------------------------------------------------
 def train_model_from_feedback():
-    """Retrain using synthetic + all real 'like' feedback (called after each like)."""
-    X_syn, y_syn = generate_synthetic_data(n_samples=5000, random_seed=42)
+    # 1. Load synthetic base
+    df_syn = load_synthetic_dataset()
+    X_syn, y_syn = prepare_features(df_syn)
 
+    # 2. Load real 'like' feedback from database
     conn = get_db_connection()
     feedback_df = pd.read_sql_query("""
         SELECT age, daily_hours, work_related, platform,
                usage_years, sleep_hours, mental_health,
                predicted_risk as actual_risk
-        FROM feedback WHERE feedback = 'like'
+        FROM feedback
+        WHERE feedback = 'like'
     """, conn)
     conn.close()
 
     if len(feedback_df) == 0:
         return None
 
-    real_dummies = pd.get_dummies(feedback_df['platform'], prefix='platform')
-    real_features = feedback_df[['age', 'daily_hours', 'work_related', 'sleep_hours',
-                                 'mental_health', 'usage_years']]
-    X_real = pd.concat([real_features, real_dummies], axis=1)
+    # Prepare real data (same feature engineering)
+    platform_dummies = pd.get_dummies(feedback_df['platform'], prefix='platform')
+    # Add missing platform columns (align with X_syn)
+    for col in X_syn.columns:
+        if col.startswith('platform_') and col not in platform_dummies.columns:
+            platform_dummies[col] = 0
+    numerical = feedback_df[['age', 'daily_hours', 'work_related', 'sleep_hours',
+                             'mental_health', 'usage_years']]
+    X_real = pd.concat([numerical, platform_dummies], axis=1)
+    X_real = X_real.reindex(columns=X_syn.columns, fill_value=0)
     y_real = feedback_df['actual_risk'].map({'Low': 0, 'Medium': 1, 'High': 2})
-
-    # Align columns
-    all_columns = set(X_syn.columns).union(set(X_real.columns))
-    for col in all_columns:
-        if col not in X_syn.columns:
-            X_syn[col] = 0
-        if col not in X_real.columns:
-            X_real[col] = 0
-    ordered = sorted(all_columns)
-    X_syn = X_syn[ordered]
-    X_real = X_real[ordered]
 
     X_combined = pd.concat([X_syn, X_real], ignore_index=True)
     y_combined = pd.concat([y_syn, y_real], ignore_index=True)
 
-    print(f"Retraining AdaBoost on synthetic ({len(X_syn)}) + {len(X_real)} real feedback")
+    st.info(f"Retraining on {len(X_syn):,} synthetic + {len(X_real)} real feedback samples...")
     return train_and_save_model(X_combined, y_combined, synthetic_flag=False)
 
 # ----------------------------------------------------------------------
-# Model loading & prediction
+# Load model for prediction
 # ----------------------------------------------------------------------
 def load_model():
     path = get_model_path()
@@ -205,7 +213,7 @@ def load_model():
         try:
             return joblib.load(path)
         except Exception as e:
-            print(f"Load error: {e}")
+            print(f"⚠️ Load error: {e}")
             return None
     return None
 
@@ -214,6 +222,7 @@ def predict_with_model(age, daily_hours, work_related, start_year,
     model_data = load_model()
     if model_data is None:
         return None
+
     model = model_data['model']
     feature_list = model_data['features']
     current_year = datetime.now().year
@@ -232,6 +241,7 @@ def predict_with_model(age, daily_hours, work_related, start_year,
             platform_name = col.replace('platform_', '')
             feat_dict[col] = 1 if primary_platform == platform_name else 0
 
+    # Ensure all columns are present
     X_pred = pd.DataFrame([feat_dict])[feature_list]
     pred = model.predict(X_pred)[0]
     probs = model.predict_proba(X_pred)[0]
@@ -249,7 +259,7 @@ def predict_with_model(age, daily_hours, work_related, start_year,
 
 def analyze_risk_rule_based(age, daily_hours, work_related, start_year,
                             primary_platform, sleep_hours, mental_health):
-    # Kept as safety net – should rarely be used after model is ready
+    # Fallback – should rarely be used once model is ready
     current_year = datetime.now().year
     usage_years = current_year - start_year
     platform_risk_map = {
@@ -259,31 +269,49 @@ def analyze_risk_rule_based(age, daily_hours, work_related, start_year,
         'Twitter': 'Low', 'Other': 'Low'
     }
     platform_risk = platform_risk_map.get(primary_platform, 'Medium')
-    if usage_years > 5: experience_risk = 'High'
-    elif usage_years > 2: experience_risk = 'Medium'
-    else: experience_risk = 'Low'
-    if work_related == 1:
-        if daily_hours > 5: usage_risk = 'High'
-        elif daily_hours > 3: usage_risk = 'Medium'
-        else: usage_risk = 'Low'
+    if usage_years > 5:
+        experience_risk = 'High'
+    elif usage_years > 2:
+        experience_risk = 'Medium'
     else:
-        if daily_hours > 3: usage_risk = 'High'
-        elif daily_hours > 2: usage_risk = 'Medium'
-        else: usage_risk = 'Low'
-    if sleep_hours < 6: sleep_risk = 'High'
-    elif sleep_hours < 7: sleep_risk = 'Medium'
-    else: sleep_risk = 'Low'
-    if mental_health < 4: mental_risk = 'High'
-    elif mental_health < 7: mental_risk = 'Medium'
-    else: mental_risk = 'Low'
-    risk_scores = {'High':3, 'Medium':2, 'Low':1}
+        experience_risk = 'Low'
+    if work_related == 1:
+        if daily_hours > 5:
+            usage_risk = 'High'
+        elif daily_hours > 3:
+            usage_risk = 'Medium'
+        else:
+            usage_risk = 'Low'
+    else:
+        if daily_hours > 3:
+            usage_risk = 'High'
+        elif daily_hours > 2:
+            usage_risk = 'Medium'
+        else:
+            usage_risk = 'Low'
+    if sleep_hours < 6:
+        sleep_risk = 'High'
+    elif sleep_hours < 7:
+        sleep_risk = 'Medium'
+    else:
+        sleep_risk = 'Low'
+    if mental_health < 4:
+        mental_risk = 'High'
+    elif mental_health < 7:
+        mental_risk = 'Medium'
+    else:
+        mental_risk = 'Low'
+    risk_scores = {'High': 3, 'Medium': 2, 'Low': 1}
     work_factor = 0.9 if work_related == 1 else 1.0
-    total = (risk_scores[usage_risk]*2 + risk_scores[platform_risk]*1.5 +
+    total = (risk_scores[usage_risk] * 2 + risk_scores[platform_risk] * 1.5 +
              risk_scores[experience_risk] + risk_scores[sleep_risk] + risk_scores[mental_risk]) * work_factor
     avg = total / 6.5
-    if avg > 2.3: overall_risk = 'High'
-    elif avg > 1.5: overall_risk = 'Medium'
-    else: overall_risk = 'Low'
+    if avg > 2.3:
+        overall_risk = 'High'
+    elif avg > 1.5:
+        overall_risk = 'Medium'
+    else:
+        overall_risk = 'Low'
     return {
         'overall_risk': overall_risk,
         'usage_risk': usage_risk,
@@ -301,11 +329,11 @@ def analyze_risk_rule_based(age, daily_hours, work_related, start_year,
 
 def analyze_risk(age, daily_hours, work_related, start_year,
                 primary_platform, sleep_hours, mental_health):
-    # Prefer model; fallback to rule-based only if model missing
+    # Use model if available, otherwise rule‑based
     res = predict_with_model(age, daily_hours, work_related, start_year,
-                            primary_platform, sleep_hours, mental_health)
+                             primary_platform, sleep_hours, mental_health)
     if res:
-        # Add extra fields needed by the UI
+        # Add extra fields expected by the UI
         platform_risk_map = {
             'Telegram': 'High', 'YouTube': 'High', 'TikTok': 'High',
             'Instagram': 'High', 'Google': 'High', 'Facebook': 'Medium',
@@ -327,7 +355,7 @@ def analyze_risk(age, daily_hours, work_related, start_year,
                                        primary_platform, sleep_hours, mental_health)
 
 # ----------------------------------------------------------------------
-# AUTHENTICATION & DATABASE FUNCTIONS
+# Authentication and database functions (your existing code)
 # ----------------------------------------------------------------------
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -336,8 +364,8 @@ def check_login(username, password):
     conn = get_db_connection()
     c = conn.cursor()
     hashed_pw = hash_password(password)
-    user = c.execute("SELECT * FROM users WHERE username=? AND password=?", 
-                    (username, hashed_pw)).fetchone()
+    user = c.execute("SELECT * FROM users WHERE username=? AND password=?",
+                     (username, hashed_pw)).fetchone()
     if user:
         update_last_login(username)
         log_activity("login", username, "User logged in")
@@ -357,8 +385,8 @@ def create_user(username, password, is_admin=False):
     c = conn.cursor()
     try:
         hashed_pw = hash_password(password)
-        c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
-                 (username, hashed_pw, datetime.now(), 1 if is_admin else 0, None))
+        c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)",
+                  (username, hashed_pw, datetime.now(), 1 if is_admin else 0, None))
         conn.commit()
         log_activity("user_created", username, f"New user created by admin")
         backup_database()
@@ -371,7 +399,7 @@ def create_user(username, password, is_admin=False):
 def log_activity(activity_type, username, description, details=None):
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute('''INSERT INTO activities 
+    c.execute('''INSERT INTO activities
                  (activity_type, username, description, details, ip_address, timestamp)
                  VALUES (?, ?, ?, ?, ?, ?)''',
               (activity_type, username, description, details, "web", datetime.now()))
@@ -382,13 +410,14 @@ def log_activity(activity_type, username, description, details=None):
 def log_risk_analysis(username, age, daily_hours, work_related, start_year, platform, sleep_hours, mental_health, risk_result):
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute('''INSERT INTO risk_analyses 
+    c.execute('''INSERT INTO risk_analyses
                  (username, age, daily_hours, work_related, start_year, platform, sleep_hours, mental_health, risk_result, timestamp)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
               (username, age, daily_hours, work_related, start_year, platform, sleep_hours, mental_health, risk_result, datetime.now()))
     conn.commit()
     conn.close()
-    log_activity("risk_analysis", username, f"Performed risk analysis: {risk_result}", f"Age:{age}, Hours:{daily_hours}, Work:{work_related}, Platform:{platform}")
+    log_activity("risk_analysis", username, f"Performed risk analysis: {risk_result}",
+                 f"Age:{age}, Hours:{daily_hours}, Work:{work_related}, Platform:{platform}")
 
 def get_all_activities(limit=100):
     conn = get_db_connection()
@@ -428,7 +457,7 @@ def get_all_comments():
 def update_comment_reply(comment_id, reply):
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute('''UPDATE comments 
+    c.execute('''UPDATE comments
                  SET status='replied', reply=?, replied_at=?
                  WHERE id=?''',
               (reply, datetime.now(), comment_id))
@@ -455,7 +484,7 @@ def get_all_user_feedback():
 def save_model_feedback(data):
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute('''INSERT INTO feedback 
+    c.execute('''INSERT INTO feedback
                  (username, age, daily_hours, work_related, platform, usage_years, sleep_hours, mental_health, predicted_risk, feedback, timestamp)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
               (data['username'], data['age'], data['daily_hours'], data['work_related'], data['platform'],
@@ -466,24 +495,21 @@ def save_model_feedback(data):
     log_activity("model_feedback", data['username'], f"Gave {data['feedback']} feedback on prediction")
     backup_database()
 
-    # ==============================================================
-    # RETRAIN AFTER EVERY "LIKE" FEEDBACK (immediate adaptation)
-    # ==============================================================
+    # Retrain after every "like" feedback
     if data['feedback'] == 'like':
-        with st.spinner("📈 Adapting model with your feedback... (one moment)"):
+        with st.spinner("📈 Adapting model with your feedback (this may take a few seconds)..."):
             result = train_model_from_feedback()
             if result:
                 st.success(f"✅ Model updated! New accuracy: {result['metrics']['accuracy']:.2%}")
-                # Show a small notification (optional)
                 st.toast("Model improved with your feedback!", icon="🎯")
             else:
-                st.info("ℹ️ Model will update after more feedback.")
+                st.info("ℹ️ No new real feedback yet – model unchanged.")
 
 def save_usage_entry(username, log_date, app_name, hours, minutes, work_related):
     conn = get_db_connection()
     c = conn.cursor()
     total_minutes = (hours * 60) + minutes
-    c.execute('''INSERT INTO usage_tracking 
+    c.execute('''INSERT INTO usage_tracking
                  (username, date, app_name, hours, minutes, total_minutes, work_related, timestamp)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
               (username, log_date, app_name, hours, minutes, total_minutes, work_related, datetime.now()))
@@ -496,8 +522,8 @@ def get_user_usage_by_app(username, days=30):
     conn = get_db_connection()
     cutoff_date = (datetime.now() - timedelta(days=days)).date()
     df = pd.read_sql_query(f"""
-        SELECT date, app_name, hours, minutes, total_minutes, work_related 
-        FROM usage_tracking 
+        SELECT date, app_name, hours, minutes, total_minutes, work_related
+        FROM usage_tracking
         WHERE username = '{username}' AND date >= '{cutoff_date}'
         ORDER BY date DESC
     """, conn)
@@ -517,17 +543,16 @@ def get_model_metrics():
     return df.iloc[0] if not df.empty else None
 
 # ----------------------------------------------------------------------
-# DATABASE INITIALIZATION (tables + initial model)
+# Database initialization (tables + initial model)
 # ----------------------------------------------------------------------
 def init_db():
     restore_from_backup()
     conn = get_db_connection()
     c = conn.cursor()
 
-    # Users table
+    # Create all tables
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (username TEXT PRIMARY KEY, password TEXT, created_at TIMESTAMP, is_admin INTEGER DEFAULT 0, last_login TIMESTAMP)''')
-    # Feedback table (model likes/unlikes)
     c.execute('''CREATE TABLE IF NOT EXISTS feedback
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   username TEXT, age INTEGER, daily_hours REAL, work_related INTEGER,
@@ -553,28 +578,28 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, accuracy REAL, precision REAL,
                   recall REAL, f1_score REAL, training_samples INTEGER, timestamp TIMESTAMP)''')
 
-    # Create admin user (password: ML@2026)
+    # Create admin user (password = ML@2026)
     admin_exists = c.execute("SELECT * FROM users WHERE username='getaye'").fetchone()
     if not admin_exists:
         hashed_pw = hash_password("ML@2026")
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)",
-                 ("getaye", hashed_pw, datetime.now(), 1, None))
+                  ("getaye", hashed_pw, datetime.now(), 1, None))
         print("✅ Admin user 'getaye' created")
 
     conn.commit()
     conn.close()
     backup_database()
 
-    # Train initial model if not already present
+    # Train initial model if not present
     if not os.path.exists(get_model_path()):
-        with st.spinner("First launch: training initial AdaBoost model (please wait)..."):
+        with st.spinner("First launch: training AdaBoost model on 50,000 rows (this may take 10-20 seconds)..."):
             generate_initial_model()
         st.success("✅ Initial AdaBoost model is ready!")
 
 init_db()
 
 # ----------------------------------------------------------------------
-# CUSTOM CSS (full original styling)
+# CSS (full original styling)
 # ----------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -724,7 +749,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------
-# SESSION STATE
+# Session state
 # ----------------------------------------------------------------------
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
@@ -736,7 +761,7 @@ if 'logged_in' not in st.session_state:
     st.session_state.last_risk_result = None
 
 # ----------------------------------------------------------------------
-# LOGIN PAGE HEADER
+# Login page header (public)
 # ----------------------------------------------------------------------
 if not st.session_state.logged_in:
     st.markdown("""
@@ -748,7 +773,7 @@ if not st.session_state.logged_in:
     """, unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------
-# PUBLIC SECTION (No login)
+# Public section (no login)
 # ----------------------------------------------------------------------
 if not st.session_state.logged_in:
     if st.session_state.public_menu is None:
@@ -785,13 +810,13 @@ if not st.session_state.logged_in:
             st.markdown("## 📋 About This Application")
             st.markdown("""
             This application uses **Adaptive AdaBoost Machine Learning** to analyze social media addiction risk.
-            
+
             **How it works:**
             - 📊 Analyzes your usage patterns and habits
             - 🧠 Uses machine learning to predict risk levels
             - 💡 Provides personalized recommendations
             - 📈 Tracks your progress over time
-            
+
             **Features available after login:**
             - ✅ Advanced risk assessment with actual ML model
             - ✅ Multi-app usage tracking (log multiple apps per day)
@@ -877,11 +902,11 @@ if not st.session_state.logged_in:
         elif st.session_state.public_menu == "help":
             st.markdown("## 📞 Get Help")
             st.markdown("""
-            **Need assistance?**  
-            Please use the **Contact Admin** option to send your questions or concerns.  
-            The administrator will respond to your inquiry as soon as possible.  
-            **Common topics:** Account issues, Feature requests, Technical support, General questions  
-            
+            **Need assistance?**
+            Please use the **Contact Admin** option to send your questions or concerns.
+            The administrator will respond to your inquiry as soon as possible.
+            **Common topics:** Account issues, Feature requests, Technical support, General questions
+
             👉 Go to **Contact Admin** from the main menu to send a message.
             """)
             if st.button("Go to Contact Admin"):
@@ -890,7 +915,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ----------------------------------------------------------------------
-# LOGGED IN SECTION
+# Logged‑in sidebar
 # ----------------------------------------------------------------------
 with st.sidebar:
     st.markdown(f"""
@@ -916,7 +941,7 @@ with st.sidebar:
         st.rerun()
 
 # ----------------------------------------------------------------------
-# DASHBOARD MAIN PAGE
+# Dashboard main page
 # ----------------------------------------------------------------------
 if st.session_state.dashboard_menu == "main":
     st.markdown("## 📋 Dashboard")
@@ -935,7 +960,7 @@ if st.session_state.dashboard_menu == "main":
         st.metric("Feedback Given", feedback_count)
     model_data = load_model()
     if model_data:
-        st.success(f"✅ AdaBoost Model Active - {model_data['metrics']['training_samples']} training samples, {model_data['metrics']['accuracy']:.1%} accuracy")
+        st.success(f"✅ AdaBoost Model Active - {model_data['metrics']['training_samples']:,} training samples, {model_data['metrics']['accuracy']:.1%} accuracy")
     else:
         st.info("ℹ️ Using rule‑based system (collecting feedback to train ML model)")
     st.markdown("### 📱 Features")
@@ -979,7 +1004,7 @@ if st.session_state.dashboard_menu == "main":
                 st.rerun()
 
 # ----------------------------------------------------------------------
-# RISK ANALYZER
+# Risk Analyzer (full version)
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "analyzer":
     st.markdown("## 📊 Risk Analyzer")
@@ -1012,7 +1037,7 @@ elif st.session_state.dashboard_menu == "analyzer":
         else:
             st.markdown(f'<div class="risk-low"><h2>✅ LOW ADDICTION RISK</h2><p>Confidence: {confidence:.1%}</p></div>', unsafe_allow_html=True)
         if model_data:
-            st.info(f"🤖 Prediction made by AdaBoost ML model (trained on {model_data['metrics']['training_samples']} samples, {model_data['metrics']['accuracy']:.1%} accuracy)")
+            st.info(f"🤖 Prediction made by AdaBoost ML model (trained on {model_data['metrics']['training_samples']:,} samples, {model_data['metrics']['accuracy']:.1%} accuracy)")
         st.markdown("### 💡 Personalized Recommendations")
         if result['overall_risk'] == 'High':
             st.markdown("""
@@ -1088,7 +1113,7 @@ elif st.session_state.dashboard_menu == "analyzer":
                 save_model_feedback(feedback_data)
 
 # ----------------------------------------------------------------------
-# RECOMMENDATIONS
+# Recommendations
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "recommendations":
     st.markdown("## 💡 Personalized Recommendations")
@@ -1148,7 +1173,7 @@ elif st.session_state.dashboard_menu == "recommendations":
             st.rerun()
 
 # ----------------------------------------------------------------------
-# PROFILE
+# My Profile
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "profile":
     st.markdown("## 👤 My Profile")
@@ -1177,7 +1202,7 @@ elif st.session_state.dashboard_menu == "profile":
         st.metric("Feedback Given", feedback_count)
 
 # ----------------------------------------------------------------------
-# FEEDBACK FORM
+# Submit Feedback (user suggestions)
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "feedback_form":
     st.markdown("## 📝 Submit Feedback")
@@ -1203,7 +1228,7 @@ elif st.session_state.dashboard_menu == "feedback_form":
                 st.error("❌ Please enter feedback")
 
 # ----------------------------------------------------------------------
-# MY ACTIVITY
+# My Activity
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "my_activity":
     st.markdown("## 📊 My Activity")
@@ -1243,7 +1268,7 @@ elif st.session_state.dashboard_menu == "my_activity":
             st.info("No risk analyses yet")
 
 # ----------------------------------------------------------------------
-# USAGE ANALYTICS
+# Usage Analytics (multi-app logging)
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "analytics":
     st.markdown("## 📈 Usage Analytics")
@@ -1274,8 +1299,8 @@ elif st.session_state.dashboard_menu == "analytics":
         today = datetime.now().date()
         conn = get_db_connection()
         today_usage = pd.read_sql_query(f"""
-            SELECT app_name, hours, minutes, work_related 
-            FROM usage_tracking 
+            SELECT app_name, hours, minutes, work_related
+            FROM usage_tracking
             WHERE username='{st.session_state.username}' AND date='{today}'
             ORDER BY timestamp DESC
         """, conn)
@@ -1352,7 +1377,7 @@ elif st.session_state.dashboard_menu == "analytics":
             st.info("No usage history yet")
 
 # ----------------------------------------------------------------------
-# ADMIN: USER MANAGEMENT
+# ADMIN: User Management
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "user_management" and st.session_state.is_admin:
     st.markdown("## 👥 User Management")
@@ -1386,7 +1411,7 @@ elif st.session_state.dashboard_menu == "user_management" and st.session_state.i
         st.dataframe(users_df, use_container_width=True)
 
 # ----------------------------------------------------------------------
-# ADMIN: COMMENTS
+# ADMIN: Comments (moderate public comments)
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "comments" and st.session_state.is_admin:
     st.markdown("## 💬 Public Comments")
@@ -1424,7 +1449,7 @@ elif st.session_state.dashboard_menu == "comments" and st.session_state.is_admin
         st.info("No comments yet")
 
 # ----------------------------------------------------------------------
-# ADMIN: ACTIVITY LOG
+# ADMIN: Activity Log (all activities + risk analyses + logins)
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "activity" and st.session_state.is_admin:
     st.markdown("## 📋 Activity Log")
@@ -1491,7 +1516,7 @@ elif st.session_state.dashboard_menu == "activity" and st.session_state.is_admin
             st.info("No model metrics yet - model hasn't been trained")
 
 # ----------------------------------------------------------------------
-# ADMIN: MODEL FEEDBACK (shows all entries, with retrain button)
+# ADMIN: Model Feedback (view likes/unlikes, retrain button)
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin:
     st.markdown("## 📊 Model Feedback Analysis")
@@ -1541,7 +1566,7 @@ elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin
                     st.warning("⚠️ Need at least one 'like' feedback to retrain.")
 
 # ----------------------------------------------------------------------
-# FOOTER
+# Footer
 # ----------------------------------------------------------------------
 st.markdown("""
 <footer>
