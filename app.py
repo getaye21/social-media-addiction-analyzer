@@ -63,6 +63,18 @@ def backup_database():
         except:
             pass
 
+def restore_from_backup():
+    """Restore database from backup if main DB is missing"""
+    db_path, backup_path = get_db_path()
+    if not os.path.exists(db_path) and os.path.exists(backup_path):
+        try:
+            shutil.copy2(backup_path, db_path)
+            print("✅ Restored database from backup")
+            return True
+        except Exception as e:
+            print(f"⚠️ Restore failed: {e}")
+    return False
+
 # ----------------------------------------------------------------------
 # Load or generate synthetic dataset (50k rows)
 # ----------------------------------------------------------------------
@@ -109,7 +121,7 @@ def load_synthetic_dataset():
         return df
 
 # ----------------------------------------------------------------------
-# Feature engineering (must match the dataset)
+# Feature engineering
 # ----------------------------------------------------------------------
 def prepare_features(df):
     all_platforms = ['TikTok','Instagram','YouTube','Facebook','WhatsApp',
@@ -326,7 +338,7 @@ def analyze_risk(age, daily_hours, work_related, start_year,
                                        primary_platform, sleep_hours, mental_health)
 
 # ----------------------------------------------------------------------
-# Authentication and database functions (unchanged from your original, with feedback fix)
+# Authentication and database functions
 # ----------------------------------------------------------------------
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
