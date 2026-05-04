@@ -450,36 +450,29 @@ def get_all_user_feedback():
     return df
 
 # ----------------------------------------------------------------------
-# save_model_feedback with explicit success/error and retraining
+# save_model_feedback — FIXED: no st.write debug, clean error handling
 # ----------------------------------------------------------------------
 def save_model_feedback(data):
-    st.write(f"DEBUG: saving feedback for user {data['username']}, feedback={data['feedback']}")
     try:
         conn = get_db_connection()
         c = conn.cursor()
         c.execute('''INSERT INTO feedback
-                     (username, age, daily_hours, work_related, platform, usage_years, sleep_hours, mental_health, predicted_risk, feedback, timestamp)
+                     (username, age, daily_hours, work_related, platform, usage_years,
+                      sleep_hours, mental_health, predicted_risk, feedback, timestamp)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                  (data['username'], data['age'], data['daily_hours'], data['work_related'], data['platform'],
-                   data['usage_years'], data['sleep_hours'], data['mental_health'],
-                   data['predicted_risk'], data['feedback'], datetime.now()))
+                  (data['username'], data['age'], data['daily_hours'], data['work_related'],
+                   data['platform'], data['usage_years'], data['sleep_hours'],
+                   data['mental_health'], data['predicted_risk'], data['feedback'],
+                   datetime.now()))
         conn.commit()
         conn.close()
-        log_activity("model_feedback", data['username'], f"Gave {data['feedback']} feedback on prediction")
+        log_activity("model_feedback", data['username'],
+                     f"Gave {data['feedback']} feedback on prediction")
         backup_database()
-        st.success(f"✅ Feedback recorded! Thank you for helping improve the model.")
-
-        if data['feedback'] == 'like':
-            with st.spinner("📈 Adapting model with your feedback (this may take a few seconds)..."):
-                result = train_model_from_feedback()
-                if result:
-                    st.success(f"✅ Model updated with your feedback! New accuracy: {result['metrics']['accuracy']:.2%}")
-                    st.toast("Model improved with your feedback!", icon="🎯")
-                else:
-                    st.info("ℹ️ Not enough new data yet – model unchanged.")
+        return True
     except Exception as e:
-        st.error(f"❌ Failed to save feedback: {e}")
         print(f"❌ Error saving feedback: {e}")
+        return False
 
 def save_usage_entry(username, log_date, app_name, hours, minutes, work_related):
     conn = get_db_connection()
@@ -519,7 +512,7 @@ def get_model_metrics():
     return df.iloc[0] if not df.empty else None
 
 # ----------------------------------------------------------------------
-# Database initialization (creates tables and forces model training)
+# Database initialization
 # ----------------------------------------------------------------------
 def init_db():
     restore_from_backup()
@@ -527,21 +520,24 @@ def init_db():
     c = conn.cursor()
 
     c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (username TEXT PRIMARY KEY, password TEXT, created_at TIMESTAMP, is_admin INTEGER DEFAULT 0, last_login TIMESTAMP)''')
+                 (username TEXT PRIMARY KEY, password TEXT, created_at TIMESTAMP,
+                  is_admin INTEGER DEFAULT 0, last_login TIMESTAMP)''')
     c.execute('''CREATE TABLE IF NOT EXISTS feedback
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   username TEXT, age INTEGER, daily_hours REAL, work_related INTEGER,
                   platform TEXT, usage_years REAL, sleep_hours REAL, mental_health INTEGER,
                   predicted_risk TEXT, feedback TEXT, timestamp TIMESTAMP)''')
     c.execute('''CREATE TABLE IF NOT EXISTS user_feedback
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, feedback_type TEXT, feedback_text TEXT, timestamp TIMESTAMP)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, feedback_type TEXT,
+                  feedback_text TEXT, timestamp TIMESTAMP)''')
     c.execute('''CREATE TABLE IF NOT EXISTS usage_tracking
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, date DATE,
                   app_name TEXT, hours INTEGER, minutes INTEGER, total_minutes INTEGER,
                   work_related INTEGER, timestamp TIMESTAMP)''')
     c.execute('''CREATE TABLE IF NOT EXISTS comments
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT, comment TEXT,
-                  status TEXT DEFAULT 'pending', timestamp TIMESTAMP, replied_at TIMESTAMP, reply TEXT)''')
+                  status TEXT DEFAULT 'pending', timestamp TIMESTAMP,
+                  replied_at TIMESTAMP, reply TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS activities
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, activity_type TEXT, username TEXT,
                   description TEXT, details TEXT, ip_address TEXT, timestamp TIMESTAMP)''')
@@ -572,7 +568,7 @@ def init_db():
 init_db()
 
 # ----------------------------------------------------------------------
-# CSS (full original styling)
+# CSS
 # ----------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -596,6 +592,7 @@ st.markdown("""
     .activity-time { font-size: 0.8rem; color: #64748b; }
     .info-box { background: #EFF6FF; padding: 1.5rem; border-radius: 10px; border-left: 5px solid #2563EB; margin: 1rem 0; }
     .app-entry { background: #f8fafc; padding: 1rem; border-radius: 10px; border: 1px solid #e2e8f0; margin: 0.5rem 0; }
+    .feedback-section { background: #F0FDF4; padding: 1.5rem; border-radius: 10px; border: 2px solid #10B981; margin: 1rem 0; }
     footer { text-align: center; padding: 1.5rem; color: #6B7280; font-size: 0.9rem; border-top: 1px solid #E5E7EB; margin-top: 2rem; }
 </style>
 """, unsafe_allow_html=True)
@@ -611,6 +608,8 @@ if 'logged_in' not in st.session_state:
     st.session_state.public_menu = None
     st.session_state.dashboard_menu = "main"
     st.session_state.last_risk_result = None
+    st.session_state.last_inputs = None          # ← NEW: persist analyzer inputs
+    st.session_state.feedback_given = False       # ← NEW: prevent double-submit
 
 # ----------------------------------------------------------------------
 # Login page header (public)
@@ -696,11 +695,11 @@ if not st.session_state.logged_in:
                     work_val = 1 if work_related == "Yes" else 0
                     result = analyze_risk(age, daily_hours, work_val, start_year, primary_platform, sleep_hours, mental_health)
                     if result['overall_risk'] == 'High':
-                        st.markdown(f'<div class="risk-high"><h2>⚠️ HIGH ADDICTION RISK</h2></div>', unsafe_allow_html=True)
+                        st.markdown('<div class="risk-high"><h2>⚠️ HIGH ADDICTION RISK</h2></div>', unsafe_allow_html=True)
                     elif result['overall_risk'] == 'Medium':
-                        st.markdown(f'<div class="risk-moderate"><h2>⚠️ MODERATE ADDICTION RISK</h2></div>', unsafe_allow_html=True)
+                        st.markdown('<div class="risk-moderate"><h2>⚠️ MODERATE ADDICTION RISK</h2></div>', unsafe_allow_html=True)
                     else:
-                        st.markdown(f'<div class="risk-low"><h2>✅ LOW ADDICTION RISK</h2></div>', unsafe_allow_html=True)
+                        st.markdown('<div class="risk-low"><h2>✅ LOW ADDICTION RISK</h2></div>', unsafe_allow_html=True)
                     st.info("📝 Login for detailed analysis and recommendations")
         elif st.session_state.public_menu == "contact":
             st.markdown("## 💬 Contact Admin")
@@ -767,7 +766,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ----------------------------------------------------------------------
-# Logged‑in sidebar
+# Logged-in sidebar
 # ----------------------------------------------------------------------
 with st.sidebar:
     st.markdown(f"""
@@ -793,7 +792,7 @@ with st.sidebar:
         st.rerun()
 
 # ----------------------------------------------------------------------
-# Dashboard main page (removed accuracy percentage)
+# Dashboard main page
 # ----------------------------------------------------------------------
 if st.session_state.dashboard_menu == "main":
     st.markdown("## 📋 Dashboard")
@@ -814,7 +813,7 @@ if st.session_state.dashboard_menu == "main":
     if model_data:
         st.success(f"✅ AdaBoost Model Active")
     else:
-        st.info("ℹ️ Using rule‑based system (collecting feedback to train ML model)")
+        st.info("ℹ️ Using rule-based system (collecting feedback to train ML model)")
     st.markdown("### 📱 Features")
     st.markdown("Select a feature to get started:")
     col1, col2, col3 = st.columns(3)
@@ -856,14 +855,18 @@ if st.session_state.dashboard_menu == "main":
                 st.rerun()
 
 # ----------------------------------------------------------------------
-# Risk Analyzer (full version) – with fixed feedback buttons
+# Risk Analyzer — FIXED feedback section
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "analyzer":
     st.markdown("## 📊 Risk Analyzer")
     if st.button("← Back to Dashboard", key="back_analyzer"):
         st.session_state.dashboard_menu = "main"
+        st.session_state.last_risk_result = None
+        st.session_state.last_inputs = None
+        st.session_state.feedback_given = False
         st.rerun()
     st.markdown("---")
+
     col1, col2 = st.columns(2)
     with col1:
         age = st.number_input("Age", 13, 80, 22, key="analyzer_age")
@@ -875,21 +878,43 @@ elif st.session_state.dashboard_menu == "analyzer":
         sleep_hours = st.slider("Sleep (hours/night)", 3.0, 12.0, 7.0, 0.5, key="analyzer_sleep")
         mental_health = st.slider("Mental Health Score", 1, 10, 7, 1, key="analyzer_mental")
         other_platforms = st.multiselect("Other platforms you use", ["TikTok", "Instagram", "Telegram", "YouTube", "Facebook", "LinkedIn", "Snapchat", "WhatsApp", "Twitter", "Google"])
+
     if st.button("🔍 Analyze My Risk", type="primary", use_container_width=True):
         work_val = 1 if work_related == "Yes" else 0
         result = analyze_risk(age, daily_hours, work_val, start_year, primary_platform, sleep_hours, mental_health)
+
+        # ── FIX: store result AND all inputs in session_state ──
         st.session_state.last_risk_result = result
-        log_risk_analysis(st.session_state.username, age, daily_hours, work_val, start_year, primary_platform, sleep_hours, mental_health, result['overall_risk'])
+        st.session_state.last_inputs = {
+            'age': age,
+            'daily_hours': daily_hours,
+            'work_val': work_val,
+            'platform': primary_platform,
+            'sleep_hours': sleep_hours,
+            'mental_health': mental_health,
+        }
+        st.session_state.feedback_given = False   # reset on new analysis
+
+        log_risk_analysis(st.session_state.username, age, daily_hours, work_val,
+                          start_year, primary_platform, sleep_hours, mental_health,
+                          result['overall_risk'])
+
+    # ── FIX: render results & feedback OUTSIDE the analyze-button block ──
+    if st.session_state.last_risk_result:
+        result = st.session_state.last_risk_result
         model_data = load_model()
         confidence = result.get('confidence', 0.85)
+
         if result['overall_risk'] == 'High':
             st.markdown(f'<div class="risk-high"><h2>⚠️ HIGH ADDICTION RISK</h2><p>Confidence: {confidence:.1%}</p></div>', unsafe_allow_html=True)
         elif result['overall_risk'] == 'Medium':
             st.markdown(f'<div class="risk-moderate"><h2>⚠️ MODERATE ADDICTION RISK</h2><p>Confidence: {confidence:.1%}</p></div>', unsafe_allow_html=True)
         else:
             st.markdown(f'<div class="risk-low"><h2>✅ LOW ADDICTION RISK</h2><p>Confidence: {confidence:.1%}</p></div>', unsafe_allow_html=True)
+
         if model_data:
-            st.info(f"🤖 Prediction made by AdaBoost ML model")
+            st.info("🤖 Prediction made by AdaBoost ML model")
+
         st.markdown("### 💡 Personalized Recommendations")
         if result['overall_risk'] == 'High':
             st.markdown("""
@@ -930,39 +955,76 @@ elif st.session_state.dashboard_menu == "analyzer":
                 </ul>
             </div>
             """, unsafe_allow_html=True)
+
+        # ── FIX: feedback section always visible after analysis ──
         st.markdown("### 🤖 Help Improve the Model")
         st.markdown("""
         <div class="info-box">
-            <h4>How Model Feedback Works:</h4>
-            <p>When you click "Yes, Accurate" or "No, Inaccurate", you're helping train the machine learning model:</p>
+            <h4>Was this prediction accurate?</h4>
+            <p>Your feedback helps retrain the AdaBoost model in real time:</p>
             <ul>
-                <li><strong>👍 Yes, Accurate:</strong> Confirms the prediction was correct - reinforces what the model got right</li>
-                <li><strong>👎 No, Inaccurate:</strong> Flags an incorrect prediction - helps the model learn from mistakes</li>
+                <li><strong>👍 Yes, Accurate:</strong> Confirms the prediction — reinforces what the model got right</li>
+                <li><strong>👎 No, Inaccurate:</strong> Flags an incorrect prediction — helps the model learn from mistakes</li>
             </ul>
-            <p><strong>Your feedback is used immediately to improve the model!</strong> (retrains after every "Yes")</p>
         </div>
         """, unsafe_allow_html=True)
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            if st.button("👍 Yes, Accurate", key="like", use_container_width=True):
-                feedback_data = {
-                    'username': st.session_state.username,
-                    'age': age, 'daily_hours': daily_hours, 'work_related': work_val, 'platform': primary_platform,
-                    'usage_years': result['usage_years'], 'sleep_hours': sleep_hours,
-                    'mental_health': mental_health, 'predicted_risk': result['overall_risk'],
-                    'feedback': 'like'
-                }
-                save_model_feedback(feedback_data)
-        with col_f2:
-            if st.button("👎 No, Inaccurate", key="unlike", use_container_width=True):
-                feedback_data = {
-                    'username': st.session_state.username,
-                    'age': age, 'daily_hours': daily_hours, 'work_related': work_val, 'platform': primary_platform,
-                    'usage_years': result['usage_years'], 'sleep_hours': sleep_hours,
-                    'mental_health': mental_health, 'predicted_risk': result['overall_risk'],
-                    'feedback': 'unlike'
-                }
-                save_model_feedback(feedback_data)
+
+        if st.session_state.feedback_given:
+            st.success("✅ Feedback already recorded for this analysis. Run a new analysis to give more feedback.")
+        else:
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                if st.button("👍 Yes, Accurate", key="like_btn", use_container_width=True):
+                    inp = st.session_state.last_inputs
+                    feedback_data = {
+                        'username': st.session_state.username,
+                        'age': inp['age'],
+                        'daily_hours': inp['daily_hours'],
+                        'work_related': inp['work_val'],
+                        'platform': inp['platform'],
+                        'usage_years': result['usage_years'],
+                        'sleep_hours': inp['sleep_hours'],
+                        'mental_health': inp['mental_health'],
+                        'predicted_risk': result['overall_risk'],
+                        'feedback': 'like'
+                    }
+                    ok = save_model_feedback(feedback_data)
+                    if ok:
+                        st.session_state.feedback_given = True
+                        st.success("✅ Thank you! Feedback recorded.")
+                        with st.spinner("📈 Adapting model with your feedback..."):
+                            retrain_result = train_model_from_feedback()
+                            if retrain_result:
+                                st.success(f"✅ Model updated! New accuracy: {retrain_result['metrics']['accuracy']:.2%}")
+                                st.toast("Model improved with your feedback!", icon="🎯")
+                            else:
+                                st.info("ℹ️ Not enough data yet — model unchanged.")
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to save feedback. Please try again.")
+
+            with col_f2:
+                if st.button("👎 No, Inaccurate", key="unlike_btn", use_container_width=True):
+                    inp = st.session_state.last_inputs
+                    feedback_data = {
+                        'username': st.session_state.username,
+                        'age': inp['age'],
+                        'daily_hours': inp['daily_hours'],
+                        'work_related': inp['work_val'],
+                        'platform': inp['platform'],
+                        'usage_years': result['usage_years'],
+                        'sleep_hours': inp['sleep_hours'],
+                        'mental_health': inp['mental_health'],
+                        'predicted_risk': result['overall_risk'],
+                        'feedback': 'unlike'
+                    }
+                    ok = save_model_feedback(feedback_data)
+                    if ok:
+                        st.session_state.feedback_given = True
+                        st.warning("👎 Feedback recorded. Thank you for helping improve the model!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to save feedback. Please try again.")
 
 # ----------------------------------------------------------------------
 # Recommendations
@@ -1186,7 +1248,6 @@ elif st.session_state.dashboard_menu == "analytics":
             with col4:
                 most_used = usage_df.groupby('app_name')['total_minutes'].sum().idxmax()
                 st.metric("Most Used App", most_used)
-            # Work vs Personal
             work_data = usage_df.groupby('work_related')['total_minutes'].sum().reset_index()
             work_data['type'] = work_data['work_related'].map({0: 'Personal', 1: 'Work'})
             col_a, col_b = st.columns(2)
@@ -1196,13 +1257,11 @@ elif st.session_state.dashboard_menu == "analytics":
             with col_b:
                 fig2 = px.line(daily_total, x='date', y='hours', title='Daily Usage Trend')
                 st.plotly_chart(fig2, use_container_width=True)
-            # App breakdown
             app_stats = usage_df.groupby('app_name')['total_minutes'].sum().reset_index()
             app_stats['hours'] = app_stats['total_minutes'] / 60
             app_stats = app_stats.sort_values('hours', ascending=False)
             fig3 = px.bar(app_stats, x='app_name', y='hours', title='Usage by App')
             st.plotly_chart(fig3, use_container_width=True)
-            # Top days
             st.markdown("#### Top 5 Highest Usage Days")
             top_days = daily_total.nlargest(5, 'total_minutes')[['date', 'hours']]
             top_days['hours'] = top_days['hours'].round(1)
@@ -1263,7 +1322,7 @@ elif st.session_state.dashboard_menu == "user_management" and st.session_state.i
         st.dataframe(users_df, use_container_width=True)
 
 # ----------------------------------------------------------------------
-# ADMIN: Comments (moderate public comments)
+# ADMIN: Comments
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "comments" and st.session_state.is_admin:
     st.markdown("## 💬 Public Comments")
@@ -1301,7 +1360,7 @@ elif st.session_state.dashboard_menu == "comments" and st.session_state.is_admin
         st.info("No comments yet")
 
 # ----------------------------------------------------------------------
-# ADMIN: Activity Log (all activities + risk analyses + logins)
+# ADMIN: Activity Log
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "activity" and st.session_state.is_admin:
     st.markdown("## 📋 Activity Log")
@@ -1355,10 +1414,10 @@ elif st.session_state.dashboard_menu == "activity" and st.session_state.is_admin
         metrics_df = pd.read_sql_query("SELECT * FROM model_metrics ORDER BY timestamp DESC", conn)
         conn.close()
         if not metrics_df.empty:
-            for _, row in metrics_df.iterrows():
+            for i, row in metrics_df.iterrows():
                 st.markdown(f"""
                 <div class="activity-card">
-                    <strong>🤖 Model Training #{_+1}</strong><br>
+                    <strong>🤖 Model Training #{i+1}</strong><br>
                     Accuracy: {row['accuracy']:.2%} | Precision: {row['precision']:.2%} | Recall: {row['recall']:.2%} | F1: {row['f1_score']:.2%}<br>
                     Training Samples: {row['training_samples']}<br>
                     <span class="activity-time">{row['timestamp']}</span>
@@ -1368,7 +1427,7 @@ elif st.session_state.dashboard_menu == "activity" and st.session_state.is_admin
             st.info("No model metrics yet - model hasn't been trained")
 
 # ----------------------------------------------------------------------
-# ADMIN: Model Feedback (view likes/unlikes, retrain button)
+# ADMIN: Model Feedback
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin:
     st.markdown("## 📊 Model Feedback Analysis")
@@ -1381,8 +1440,8 @@ elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin
         <h4>How Model Feedback Works:</h4>
         <p>This page shows all the like/unlike feedback received from users after risk analyses.</p>
         <ul>
-            <li><strong>👍 Likes:</strong> Predictions users confirmed as accurate - used for training</li>
-            <li><strong>👎 Unlikes:</strong> Predictions users flagged as inaccurate - used for error analysis</li>
+            <li><strong>👍 Likes:</strong> Predictions users confirmed as accurate — used for retraining</li>
+            <li><strong>👎 Unlikes:</strong> Predictions users flagged as inaccurate — used for error analysis</li>
         </ul>
         <p><strong>The model retrains automatically after every "like" feedback.</strong></p>
     </div>
@@ -1402,7 +1461,7 @@ elif st.session_state.dashboard_menu == "feedback" and st.session_state.is_admin
         st.metric("👎 Unlikes", unlike_count)
 
     if total_feedback == 0:
-        st.warning("⚠️ No feedback has been collected yet. Ask users to click 'Yes' or 'No' after a risk analysis.")
+        st.warning("⚠️ No feedback collected yet. Users need to click 'Yes' or 'No' after a risk analysis.")
     else:
         conn = get_db_connection()
         feedback_df = pd.read_sql_query("SELECT * FROM feedback ORDER BY timestamp DESC", conn)
