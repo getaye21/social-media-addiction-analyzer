@@ -43,7 +43,6 @@ def get_db_path():
         backup_path = 'users.db.backup'
     if not os.path.exists(db_path) and os.path.exists('users.db'):
         shutil.copy2('users.db', db_path)
-        print(f"✅ Copied local database to {db_path}")
     return db_path, backup_path
 
 def get_model_path():
@@ -61,50 +60,82 @@ def backup_database():
     if os.path.exists(db_path):
         try:
             shutil.copy2(db_path, backup_path)
-            print(f"✅ Database backed up to {backup_path}")
-        except Exception as e:
-            print(f"⚠️ Backup failed: {e}")
+        except:
+            pass
 
 def restore_from_backup():
     db_path, backup_path = get_db_path()
     if not os.path.exists(db_path) and os.path.exists(backup_path):
         try:
             shutil.copy2(backup_path, db_path)
-            print(f"✅ Restored database from backup")
             return True
-        except Exception as e:
-            print(f"⚠️ Restore failed: {e}")
+        except:
+            pass
     return False
 
 # ----------------------------------------------------------------------
-# Load the pre‑generated 50k synthetic dataset
+# Load or generate synthetic dataset (always works)
 # ----------------------------------------------------------------------
 @st.cache_resource
 def load_synthetic_dataset():
+    # First try to load the user‑provided CSV
     if os.path.exists('social_media_addiction_data.csv'):
         df = pd.read_csv('social_media_addiction_data.csv')
-        st.success(f"✅ Loaded {len(df):,} synthetic rows from CSV")
+        st.info(f"✅ Using your CSV with {len(df):,} rows.")
         return df
     else:
-        st.error("❌ Missing 'social_media_addiction_data.csv'. Please upload it to the same folder.")
-        st.stop()
+        # Generate a realistic fallback dataset (50k rows)
+        st.warning("⚠️ CSV not found – generating synthetic dataset (50k rows). Please upload your CSV later.")
+        np.random.seed(42)
+        n = 50000
+        data = {
+            'age': np.random.randint(13, 60, n),
+            'daily_hours': np.random.uniform(0.5, 15.0, n),
+            'work_related': np.random.choice([0, 1], n, p=[0.7, 0.3]),
+            'sleep_hours': np.random.uniform(3.0, 10.0, n),
+            'mental_health': np.random.randint(1, 11, n),
+            'start_year': np.random.randint(2000, 2025, n),
+            'usage_years': 2026 - np.random.randint(2000, 2025, n),
+            'platform': np.random.choice(['TikTok','Instagram','YouTube','Facebook','WhatsApp','Telegram','Snapchat','Twitter','LinkedIn','Google','Other'], n),
+        }
+        df = pd.DataFrame(data)
+        # Add target based on your PPTX rules (usage double weight, platform 1.5x)
+        def risk_score(row):
+            # usage risk
+            if row['work_related'] == 0:
+                usage = 3 if row['daily_hours'] > 3 else (2 if row['daily_hours'] > 2 else 1)
+            else:
+                usage = 3 if row['daily_hours'] > 5 else (2 if row['daily_hours'] > 3 else 1)
+            # experience risk
+            exp = 3 if row['usage_years'] > 5 else (2 if row['usage_years'] > 2 else 1)
+            # sleep risk
+            sleep = 3 if row['sleep_hours'] < 6 else (2 if row['sleep_hours'] < 7 else 1)
+            # mental health risk
+            mental = 3 if row['mental_health'] < 4 else (2 if row['mental_health'] < 7 else 1)
+            # platform risk
+            plat_map = {'Telegram':3,'YouTube':3,'TikTok':3,'Instagram':3,'Google':3,
+                        'Facebook':2,'LinkedIn':2,'Snapchat':2,'WhatsApp':1,'Twitter':1,'Other':1}
+            plat = plat_map.get(row['platform'], 2)
+            total = (usage * 2 + plat * 1.5 + exp + sleep + mental) / 6.5
+            return 2 if total > 2.3 else (1 if total > 1.5 else 0)
+        df['target'] = df.apply(risk_score, axis=1)
+        df.to_csv('social_media_addiction_data.csv', index=False)
+        st.success("✅ Fallback dataset generated and saved.")
+        return df
 
 # ----------------------------------------------------------------------
-# Feature engineering (must match the dataset generator)
+# Feature engineering (must match the dataset)
 # ----------------------------------------------------------------------
 def prepare_features(df):
-    # All possible platforms (including those that may appear in real feedback)
-    all_platforms = [
-        'TikTok', 'Instagram', 'YouTube', 'Facebook', 'WhatsApp',
-        'Telegram', 'Snapchat', 'Twitter', 'LinkedIn', 'Google', 'Other'
-    ]
+    all_platforms = ['TikTok','Instagram','YouTube','Facebook','WhatsApp',
+                     'Telegram','Snapchat','Twitter','LinkedIn','Google','Other']
     platform_dummies = pd.get_dummies(df['platform'], prefix='platform')
     for plat in all_platforms:
         col = f'platform_{plat}'
         if col not in platform_dummies.columns:
             platform_dummies[col] = 0
-    numerical = df[['age', 'daily_hours', 'work_related', 'sleep_hours',
-                    'mental_health', 'usage_years']]
+    numerical = df[['age','daily_hours','work_related','sleep_hours',
+                    'mental_health','usage_years']]
     X = pd.concat([numerical, platform_dummies], axis=1)
     y = df['target']
     return X, y
@@ -122,7 +153,6 @@ def train_and_save_model(X, y, synthetic_flag=True):
     )
     model.fit(X, y)
 
-    # Evaluation stats (on the same training set – just for info)
     y_pred = model.predict(X)
     acc = accuracy_score(y, y_pred)
     prec = precision_score(y, y_pred, average='weighted', zero_division=0)
@@ -155,48 +185,40 @@ def train_and_save_model(X, y, synthetic_flag=True):
     conn.close()
     return model_data
 
-# ----------------------------------------------------------------------
-# Initial model: train on the full 50k synthetic dataset
-# ----------------------------------------------------------------------
 def generate_initial_model():
-    st.info("Training initial AdaBoost model on 50,000 synthetic rows (200 estimators)...")
+    st.info("🚀 Training initial AdaBoost model (200 estimators) on 50,000 rows...")
     df = load_synthetic_dataset()
     X, y = prepare_features(df)
     return train_and_save_model(X, y, synthetic_flag=True)
 
-# ----------------------------------------------------------------------
-# Adaptive retraining: synthetic 50k + all real "like" feedback
-# ----------------------------------------------------------------------
 def train_model_from_feedback():
-    # 1. Load synthetic base
+    # Load synthetic base
     df_syn = load_synthetic_dataset()
     X_syn, y_syn = prepare_features(df_syn)
 
-    # 2. Load real 'like' feedback from database
+    # Load real 'like' feedback
     conn = get_db_connection()
     feedback_df = pd.read_sql_query("""
         SELECT age, daily_hours, work_related, platform,
                usage_years, sleep_hours, mental_health,
                predicted_risk as actual_risk
-        FROM feedback
-        WHERE feedback = 'like'
+        FROM feedback WHERE feedback = 'like'
     """, conn)
     conn.close()
 
     if len(feedback_df) == 0:
         return None
 
-    # Prepare real data (same feature engineering)
+    # Prepare real data
     platform_dummies = pd.get_dummies(feedback_df['platform'], prefix='platform')
-    # Add missing platform columns (align with X_syn)
     for col in X_syn.columns:
         if col.startswith('platform_') and col not in platform_dummies.columns:
             platform_dummies[col] = 0
-    numerical = feedback_df[['age', 'daily_hours', 'work_related', 'sleep_hours',
-                             'mental_health', 'usage_years']]
+    numerical = feedback_df[['age','daily_hours','work_related','sleep_hours',
+                             'mental_health','usage_years']]
     X_real = pd.concat([numerical, platform_dummies], axis=1)
     X_real = X_real.reindex(columns=X_syn.columns, fill_value=0)
-    y_real = feedback_df['actual_risk'].map({'Low': 0, 'Medium': 1, 'High': 2})
+    y_real = feedback_df['actual_risk'].map({'Low':0, 'Medium':1, 'High':2})
 
     X_combined = pd.concat([X_syn, X_real], ignore_index=True)
     y_combined = pd.concat([y_syn, y_real], ignore_index=True)
@@ -204,16 +226,12 @@ def train_model_from_feedback():
     st.info(f"Retraining on {len(X_syn):,} synthetic + {len(X_real)} real feedback samples...")
     return train_and_save_model(X_combined, y_combined, synthetic_flag=False)
 
-# ----------------------------------------------------------------------
-# Load model for prediction
-# ----------------------------------------------------------------------
 def load_model():
     path = get_model_path()
     if os.path.exists(path):
         try:
             return joblib.load(path)
-        except Exception as e:
-            print(f"⚠️ Load error: {e}")
+        except:
             return None
     return None
 
@@ -222,7 +240,6 @@ def predict_with_model(age, daily_hours, work_related, start_year,
     model_data = load_model()
     if model_data is None:
         return None
-
     model = model_data['model']
     feature_list = model_data['features']
     current_year = datetime.now().year
@@ -241,11 +258,10 @@ def predict_with_model(age, daily_hours, work_related, start_year,
             platform_name = col.replace('platform_', '')
             feat_dict[col] = 1 if primary_platform == platform_name else 0
 
-    # Ensure all columns are present
     X_pred = pd.DataFrame([feat_dict])[feature_list]
     pred = model.predict(X_pred)[0]
     probs = model.predict_proba(X_pred)[0]
-    risk_map = {0: 'Low', 1: 'Medium', 2: 'High'}
+    risk_map = {0:'Low',1:'Medium',2:'High'}
     return {
         'overall_risk': risk_map[pred],
         'confidence': max(probs),
@@ -259,66 +275,39 @@ def predict_with_model(age, daily_hours, work_related, start_year,
 
 def analyze_risk_rule_based(age, daily_hours, work_related, start_year,
                             primary_platform, sleep_hours, mental_health):
-    # Fallback – should rarely be used once model is ready
+    # Fallback (should rarely be used)
     current_year = datetime.now().year
     usage_years = current_year - start_year
     platform_risk_map = {
-        'Telegram': 'High', 'YouTube': 'High', 'TikTok': 'High',
-        'Instagram': 'High', 'Google': 'High', 'Facebook': 'Medium',
-        'LinkedIn': 'Medium', 'Snapchat': 'Medium', 'WhatsApp': 'Low',
-        'Twitter': 'Low', 'Other': 'Low'
+        'Telegram':'High','YouTube':'High','TikTok':'High',
+        'Instagram':'High','Google':'High','Facebook':'Medium',
+        'LinkedIn':'Medium','Snapchat':'Medium','WhatsApp':'Low',
+        'Twitter':'Low','Other':'Low'
     }
-    platform_risk = platform_risk_map.get(primary_platform, 'Medium')
-    if usage_years > 5:
-        experience_risk = 'High'
-    elif usage_years > 2:
-        experience_risk = 'Medium'
-    else:
-        experience_risk = 'Low'
+    platform_risk = platform_risk_map.get(primary_platform,'Medium')
+    if usage_years > 5: exp = 'High'
+    elif usage_years > 2: exp = 'Medium'
+    else: exp = 'Low'
     if work_related == 1:
-        if daily_hours > 5:
-            usage_risk = 'High'
-        elif daily_hours > 3:
-            usage_risk = 'Medium'
-        else:
-            usage_risk = 'Low'
+        usage = 'High' if daily_hours > 5 else ('Medium' if daily_hours > 3 else 'Low')
     else:
-        if daily_hours > 3:
-            usage_risk = 'High'
-        elif daily_hours > 2:
-            usage_risk = 'Medium'
-        else:
-            usage_risk = 'Low'
-    if sleep_hours < 6:
-        sleep_risk = 'High'
-    elif sleep_hours < 7:
-        sleep_risk = 'Medium'
-    else:
-        sleep_risk = 'Low'
-    if mental_health < 4:
-        mental_risk = 'High'
-    elif mental_health < 7:
-        mental_risk = 'Medium'
-    else:
-        mental_risk = 'Low'
-    risk_scores = {'High': 3, 'Medium': 2, 'Low': 1}
-    work_factor = 0.9 if work_related == 1 else 1.0
-    total = (risk_scores[usage_risk] * 2 + risk_scores[platform_risk] * 1.5 +
-             risk_scores[experience_risk] + risk_scores[sleep_risk] + risk_scores[mental_risk]) * work_factor
+        usage = 'High' if daily_hours > 3 else ('Medium' if daily_hours > 2 else 'Low')
+    sleep = 'High' if sleep_hours < 6 else ('Medium' if sleep_hours < 7 else 'Low')
+    mental = 'High' if mental_health < 4 else ('Medium' if mental_health < 7 else 'Low')
+    scores = {'High':3,'Medium':2,'Low':1}
+    wf = 0.9 if work_related == 1 else 1.0
+    total = (scores[usage]*2 + scores[platform_risk]*1.5 + scores[exp] + scores[sleep] + scores[mental]) * wf
     avg = total / 6.5
-    if avg > 2.3:
-        overall_risk = 'High'
-    elif avg > 1.5:
-        overall_risk = 'Medium'
-    else:
-        overall_risk = 'Low'
+    if avg > 2.3: overall = 'High'
+    elif avg > 1.5: overall = 'Medium'
+    else: overall = 'Low'
     return {
-        'overall_risk': overall_risk,
-        'usage_risk': usage_risk,
+        'overall_risk': overall,
+        'usage_risk': usage,
         'platform_risk': platform_risk,
-        'experience_risk': experience_risk,
-        'sleep_risk': sleep_risk,
-        'mental_risk': mental_risk,
+        'experience_risk': exp,
+        'sleep_risk': sleep,
+        'mental_risk': mental,
         'usage_years': usage_years,
         'daily_hours': daily_hours,
         'work_related': work_related,
@@ -329,26 +318,24 @@ def analyze_risk_rule_based(age, daily_hours, work_related, start_year,
 
 def analyze_risk(age, daily_hours, work_related, start_year,
                 primary_platform, sleep_hours, mental_health):
-    # Use model if available, otherwise rule‑based
     res = predict_with_model(age, daily_hours, work_related, start_year,
                              primary_platform, sleep_hours, mental_health)
     if res:
-        # Add extra fields expected by the UI
         platform_risk_map = {
-            'Telegram': 'High', 'YouTube': 'High', 'TikTok': 'High',
-            'Instagram': 'High', 'Google': 'High', 'Facebook': 'Medium',
-            'LinkedIn': 'Medium', 'Snapchat': 'Medium', 'WhatsApp': 'Low',
-            'Twitter': 'Low', 'Other': 'Low'
+            'Telegram':'High','YouTube':'High','TikTok':'High',
+            'Instagram':'High','Google':'High','Facebook':'Medium',
+            'LinkedIn':'Medium','Snapchat':'Medium','WhatsApp':'Low',
+            'Twitter':'Low','Other':'Low'
         }
-        res['platform_risk'] = platform_risk_map.get(primary_platform, 'Medium')
+        res['platform_risk'] = platform_risk_map.get(primary_platform,'Medium')
         if work_related == 1:
-            res['usage_risk'] = 'High' if daily_hours > 5 else 'Medium' if daily_hours > 3 else 'Low'
+            res['usage_risk'] = 'High' if daily_hours>5 else ('Medium' if daily_hours>3 else 'Low')
         else:
-            res['usage_risk'] = 'High' if daily_hours > 3 else 'Medium' if daily_hours > 2 else 'Low'
-        res['sleep_risk'] = 'High' if sleep_hours < 6 else 'Medium' if sleep_hours < 7 else 'Low'
-        res['mental_risk'] = 'High' if mental_health < 4 else 'Medium' if mental_health < 7 else 'Low'
+            res['usage_risk'] = 'High' if daily_hours>3 else ('Medium' if daily_hours>2 else 'Low')
+        res['sleep_risk'] = 'High' if sleep_hours<6 else ('Medium' if sleep_hours<7 else 'Low')
+        res['mental_risk'] = 'High' if mental_health<4 else ('Medium' if mental_health<7 else 'Low')
         y = res['usage_years']
-        res['experience_risk'] = 'High' if y > 5 else 'Medium' if y > 2 else 'Low'
+        res['experience_risk'] = 'High' if y>5 else ('Medium' if y>2 else 'Low')
         return res
     else:
         return analyze_risk_rule_based(age, daily_hours, work_related, start_year,
@@ -495,7 +482,7 @@ def save_model_feedback(data):
     log_activity("model_feedback", data['username'], f"Gave {data['feedback']} feedback on prediction")
     backup_database()
 
-    # Retrain after every "like" feedback
+    # Retrain after every "like"
     if data['feedback'] == 'like':
         with st.spinner("📈 Adapting model with your feedback (this may take a few seconds)..."):
             result = train_model_from_feedback()
@@ -503,7 +490,7 @@ def save_model_feedback(data):
                 st.success(f"✅ Model updated! New accuracy: {result['metrics']['accuracy']:.2%}")
                 st.toast("Model improved with your feedback!", icon="🎯")
             else:
-                st.info("ℹ️ No new real feedback yet – model unchanged.")
+                st.info("ℹ️ Not enough new data yet – model unchanged.")
 
 def save_usage_entry(username, log_date, app_name, hours, minutes, work_related):
     conn = get_db_connection()
@@ -543,14 +530,13 @@ def get_model_metrics():
     return df.iloc[0] if not df.empty else None
 
 # ----------------------------------------------------------------------
-# Database initialization (tables + initial model)
+# Database initialization (creates tables and forces model training)
 # ----------------------------------------------------------------------
 def init_db():
     restore_from_backup()
     conn = get_db_connection()
     c = conn.cursor()
 
-    # Create all tables
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (username TEXT PRIMARY KEY, password TEXT, created_at TIMESTAMP, is_admin INTEGER DEFAULT 0, last_login TIMESTAMP)''')
     c.execute('''CREATE TABLE IF NOT EXISTS feedback
@@ -578,7 +564,6 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, accuracy REAL, precision REAL,
                   recall REAL, f1_score REAL, training_samples INTEGER, timestamp TIMESTAMP)''')
 
-    # Create admin user (password = ML@2026)
     admin_exists = c.execute("SELECT * FROM users WHERE username='getaye'").fetchone()
     if not admin_exists:
         hashed_pw = hash_password("ML@2026")
@@ -590,16 +575,16 @@ def init_db():
     conn.close()
     backup_database()
 
-    # Train initial model if not present
+    # --- FORCE MODEL TRAINING if missing ---
     if not os.path.exists(get_model_path()):
-        with st.spinner("First launch: training AdaBoost model on 50,000 rows (this may take 10-20 seconds)..."):
+        with st.spinner("First launch: training AdaBoost model on 50,000 rows (this will take 10-20 seconds)..."):
             generate_initial_model()
         st.success("✅ Initial AdaBoost model is ready!")
 
 init_db()
 
 # ----------------------------------------------------------------------
-# CSS (full original styling)
+# CUSTOM CSS (full original styling)
 # ----------------------------------------------------------------------
 st.markdown("""
 <style>
