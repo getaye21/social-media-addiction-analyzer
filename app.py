@@ -64,7 +64,6 @@ def backup_database():
             pass
 
 def restore_from_backup():
-    """Restore database from backup if main DB is missing"""
     db_path, backup_path = get_db_path()
     if not os.path.exists(db_path) and os.path.exists(backup_path):
         try:
@@ -101,7 +100,6 @@ def load_synthetic_dataset():
         }
         df = pd.DataFrame(data)
 
-        # Add target based on weighted risk (usage double, platform 1.5x)
         def risk_score(row):
             if row['work_related'] == 0:
                 usage = 3 if row['daily_hours'] > 3 else (2 if row['daily_hours'] > 2 else 1)
@@ -170,15 +168,6 @@ def train_and_save_model(X, y, synthetic_flag=True):
         }
     }
     joblib.dump(model_data, get_model_path())
-
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('''INSERT INTO model_metrics
-                 (accuracy, precision, recall, f1_score, training_samples, timestamp)
-                 VALUES (?, ?, ?, ?, ?, ?)''',
-              (acc, prec, rec, f1, len(X), datetime.now()))
-    conn.commit()
-    conn.close()
     return model_data
 
 def generate_initial_model():
@@ -188,11 +177,9 @@ def generate_initial_model():
     return train_and_save_model(X, y, synthetic_flag=True)
 
 def train_model_from_feedback():
-    # Load synthetic base
     df_syn = load_synthetic_dataset()
     X_syn, y_syn = prepare_features(df_syn)
 
-    # Load real 'like' feedback
     conn = get_db_connection()
     feedback_df = pd.read_sql_query("""
         SELECT age, daily_hours, work_related, platform,
@@ -205,7 +192,6 @@ def train_model_from_feedback():
     if len(feedback_df) == 0:
         return None
 
-    # Prepare real data
     platform_dummies = pd.get_dummies(feedback_df['platform'], prefix='platform')
     for col in X_syn.columns:
         if col.startswith('platform_') and col not in platform_dummies.columns:
@@ -271,7 +257,6 @@ def predict_with_model(age, daily_hours, work_related, start_year,
 
 def analyze_risk_rule_based(age, daily_hours, work_related, start_year,
                             primary_platform, sleep_hours, mental_health):
-    # Fallback (should rarely be used)
     current_year = datetime.now().year
     usage_years = current_year - start_year
     platform_risk_map = {
@@ -464,9 +449,11 @@ def get_all_user_feedback():
     conn.close()
     return df
 
+# ----------------------------------------------------------------------
+# save_model_feedback with explicit success/error and retraining
+# ----------------------------------------------------------------------
 def save_model_feedback(data):
-    # Debug print (visible in Hugging Face container logs)
-    print(f"🔍 save_model_feedback called with feedback={data['feedback']} for user {data['username']}")
+    st.write(f"DEBUG: saving feedback for user {data['username']}, feedback={data['feedback']}")
     try:
         conn = get_db_connection()
         c = conn.cursor()
@@ -480,20 +467,19 @@ def save_model_feedback(data):
         conn.close()
         log_activity("model_feedback", data['username'], f"Gave {data['feedback']} feedback on prediction")
         backup_database()
-        print(f"✅ Feedback saved successfully to database")
+        st.success(f"✅ Feedback recorded! Thank you for helping improve the model.")
 
-        # Retrain after every "like"
         if data['feedback'] == 'like':
             with st.spinner("📈 Adapting model with your feedback (this may take a few seconds)..."):
                 result = train_model_from_feedback()
                 if result:
-                    st.success(f"✅ Model updated! New accuracy: {result['metrics']['accuracy']:.2%}")
+                    st.success(f"✅ Model updated with your feedback! New accuracy: {result['metrics']['accuracy']:.2%}")
                     st.toast("Model improved with your feedback!", icon="🎯")
                 else:
                     st.info("ℹ️ Not enough new data yet – model unchanged.")
     except Exception as e:
+        st.error(f"❌ Failed to save feedback: {e}")
         print(f"❌ Error saving feedback: {e}")
-        st.error(f"Failed to save feedback: {e}")
 
 def save_usage_entry(username, log_date, app_name, hours, minutes, work_related):
     conn = get_db_connection()
@@ -578,7 +564,6 @@ def init_db():
     conn.close()
     backup_database()
 
-    # --- FORCE MODEL TRAINING if missing ---
     if not os.path.exists(get_model_path()):
         with st.spinner("First launch: training AdaBoost model on 50,000 rows (this will take 10-20 seconds)..."):
             generate_initial_model()
@@ -591,148 +576,27 @@ init_db()
 # ----------------------------------------------------------------------
 st.markdown("""
 <style>
-    .stSelectbox label, .stSelectbox div[data-baseweb="select"] span {
-        display: none;
-    }
-    .sidebar-header {
-        background: linear-gradient(135deg, #1E3A8A, #2563EB);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .main-header {
-        background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 50%, #1E3A8A 100%);
-        padding: 2rem;
-        border-radius: 15px;
-        color: white;
-        text-align: center;
-        margin-bottom: 1rem;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-    }
-    .red-title {
-        color: #DC2626 !important;
-        font-size: 2.5rem;
-        font-weight: bold;
-        margin: 0;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-    }
-    .developer-info {
-        font-size: 1.2rem;
-        margin: 0.5rem 0;
-        color: #FFD700;
-    }
-    .algorithm-info {
-        font-size: 1rem;
-        margin: 0.2rem 0;
-        opacity: 0.95;
-    }
-    .menu-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin: 2rem 0;
-    }
-    .menu-card {
-        background: linear-gradient(135deg, #f8fafc, #f1f5f9);
-        padding: 1.5rem;
-        border-radius: 10px;
-        border: 2px solid #e2e8f0;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.3s;
-    }
-    .menu-card:hover {
-        transform: translateY(-5px);
-        border-color: #2563EB;
-        box-shadow: 0 10px 25px rgba(37,99,235,0.2);
-    }
-    .menu-icon {
-        font-size: 2rem;
-        margin-bottom: 0.5rem;
-    }
-    .menu-title {
-        font-weight: bold;
-        color: #1E3A8A;
-        font-size: 1.1rem;
-    }
-    .feature-container {
-        background: white;
-        padding: 2rem;
-        border-radius: 15px;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        min-height: 600px;
-    }
-    .risk-high {
-        background: linear-gradient(135deg, #FEE2E2, #FECACA);
-        color: #991B1B;
-        padding: 1.5rem;
-        border-radius: 15px;
-        border-left: 8px solid #DC2626;
-        text-align: center;
-        margin: 1rem 0;
-    }
-    .risk-moderate {
-        background: linear-gradient(135deg, #FEF3C7, #FDE68A);
-        color: #92400E;
-        padding: 1.5rem;
-        border-radius: 15px;
-        border-left: 8px solid #F59E0B;
-        text-align: center;
-        margin: 1rem 0;
-    }
-    .risk-low {
-        background: linear-gradient(135deg, #D1FAE5, #A7F3D0);
-        color: #065F46;
-        padding: 1.5rem;
-        border-radius: 15px;
-        border-left: 8px solid #10B981;
-        text-align: center;
-        margin: 1rem 0;
-    }
-    .recommendations {
-        background: #f8fafc;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border-left: 5px solid #2563EB;
-        margin: 1rem 0;
-    }
-    .activity-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 4px solid #2563EB;
-        margin: 0.5rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .activity-time {
-        font-size: 0.8rem;
-        color: #64748b;
-    }
-    .info-box {
-        background: #EFF6FF;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border-left: 5px solid #2563EB;
-        margin: 1rem 0;
-    }
-    .app-entry {
-        background: #f8fafc;
-        padding: 1rem;
-        border-radius: 10px;
-        border: 1px solid #e2e8f0;
-        margin: 0.5rem 0;
-    }
-    footer {
-        text-align: center;
-        padding: 1.5rem;
-        color: #6B7280;
-        font-size: 0.9rem;
-        border-top: 1px solid #E5E7EB;
-        margin-top: 2rem;
-    }
+    .stSelectbox label, .stSelectbox div[data-baseweb="select"] span { display: none; }
+    .sidebar-header { background: linear-gradient(135deg, #1E3A8A, #2563EB); padding: 1.5rem; border-radius: 10px; color: white; text-align: center; margin-bottom: 1rem; }
+    .main-header { background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 50%, #1E3A8A 100%); padding: 2rem; border-radius: 15px; color: white; text-align: center; margin-bottom: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+    .red-title { color: #DC2626 !important; font-size: 2.5rem; font-weight: bold; margin: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+    .developer-info { font-size: 1.2rem; margin: 0.5rem 0; color: #FFD700; }
+    .algorithm-info { font-size: 1rem; margin: 0.2rem 0; opacity: 0.95; }
+    .menu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 2rem 0; }
+    .menu-card { background: linear-gradient(135deg, #f8fafc, #f1f5f9); padding: 1.5rem; border-radius: 10px; border: 2px solid #e2e8f0; text-align: center; cursor: pointer; transition: all 0.3s; }
+    .menu-card:hover { transform: translateY(-5px); border-color: #2563EB; box-shadow: 0 10px 25px rgba(37,99,235,0.2); }
+    .menu-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+    .menu-title { font-weight: bold; color: #1E3A8A; font-size: 1.1rem; }
+    .feature-container { background: white; padding: 2rem; border-radius: 15px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05); min-height: 600px; }
+    .risk-high { background: linear-gradient(135deg, #FEE2E2, #FECACA); color: #991B1B; padding: 1.5rem; border-radius: 15px; border-left: 8px solid #DC2626; text-align: center; margin: 1rem 0; }
+    .risk-moderate { background: linear-gradient(135deg, #FEF3C7, #FDE68A); color: #92400E; padding: 1.5rem; border-radius: 15px; border-left: 8px solid #F59E0B; text-align: center; margin: 1rem 0; }
+    .risk-low { background: linear-gradient(135deg, #D1FAE5, #A7F3D0); color: #065F46; padding: 1.5rem; border-radius: 15px; border-left: 8px solid #10B981; text-align: center; margin: 1rem 0; }
+    .recommendations { background: #f8fafc; padding: 1.5rem; border-radius: 10px; border-left: 5px solid #2563EB; margin: 1rem 0; }
+    .activity-card { background: white; padding: 1rem; border-radius: 10px; border-left: 4px solid #2563EB; margin: 0.5rem 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .activity-time { font-size: 0.8rem; color: #64748b; }
+    .info-box { background: #EFF6FF; padding: 1.5rem; border-radius: 10px; border-left: 5px solid #2563EB; margin: 1rem 0; }
+    .app-entry { background: #f8fafc; padding: 1rem; border-radius: 10px; border: 1px solid #e2e8f0; margin: 0.5rem 0; }
+    footer { text-align: center; padding: 1.5rem; color: #6B7280; font-size: 0.9rem; border-top: 1px solid #E5E7EB; margin-top: 2rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -929,7 +793,7 @@ with st.sidebar:
         st.rerun()
 
 # ----------------------------------------------------------------------
-# Dashboard main page
+# Dashboard main page (removed accuracy percentage)
 # ----------------------------------------------------------------------
 if st.session_state.dashboard_menu == "main":
     st.markdown("## 📋 Dashboard")
@@ -948,7 +812,7 @@ if st.session_state.dashboard_menu == "main":
         st.metric("Feedback Given", feedback_count)
     model_data = load_model()
     if model_data:
-        st.success(f"✅ AdaBoost Model Active - {model_data['metrics']['training_samples']:,} training samples, {model_data['metrics']['accuracy']:.1%} accuracy")
+        st.success(f"✅ AdaBoost Model Active")
     else:
         st.info("ℹ️ Using rule‑based system (collecting feedback to train ML model)")
     st.markdown("### 📱 Features")
@@ -992,7 +856,7 @@ if st.session_state.dashboard_menu == "main":
                 st.rerun()
 
 # ----------------------------------------------------------------------
-# Risk Analyzer (full version)
+# Risk Analyzer (full version) – with fixed feedback buttons
 # ----------------------------------------------------------------------
 elif st.session_state.dashboard_menu == "analyzer":
     st.markdown("## 📊 Risk Analyzer")
@@ -1025,7 +889,7 @@ elif st.session_state.dashboard_menu == "analyzer":
         else:
             st.markdown(f'<div class="risk-low"><h2>✅ LOW ADDICTION RISK</h2><p>Confidence: {confidence:.1%}</p></div>', unsafe_allow_html=True)
         if model_data:
-            st.info(f"🤖 Prediction made by AdaBoost ML model (trained on {model_data['metrics']['training_samples']:,} samples, {model_data['metrics']['accuracy']:.1%} accuracy)")
+            st.info(f"🤖 Prediction made by AdaBoost ML model")
         st.markdown("### 💡 Personalized Recommendations")
         if result['overall_risk'] == 'High':
             st.markdown("""
