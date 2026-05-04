@@ -1,25 +1,31 @@
-name: Sync to Hugging Face
-
+name: Sync to Hugging Face hub
 on:
   push:
-    branches: [main]
+    branches: [main] # Change to 'master' if your main branch is called master
   workflow_dispatch:
 
 jobs:
-  sync:
+  sync-to-hub:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
+          fetch-depth: 0
           lfs: true
 
-      - name: Push to Hugging Face Space
+      - name: Push to Hugging Face
         env:
-          HF_TOKEN: ${{ secrets.github-deploy }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git config --global user.email "github-actions@github.com"
+          # 1. Configure Git
+          git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
-
-          # Push directly using the token
-          git push https://Getaye:${HF_TOKEN}@huggingface.co/spaces/Getaye/social-media-addiction-analyzer main --force
+          
+          # 2. Add the Hugging Face remote
+          # We use 'x' as a dummy username because the token is the actual credential
+          git remote add hf https://Getaye:$HF_TOKEN@huggingface.co/spaces/Getaye/social-media-addiction-analyzer
+          
+          # 3. Push to the main branch
+          # This 'force' pushes your GitHub main to HF main
+          git push --force hf main
