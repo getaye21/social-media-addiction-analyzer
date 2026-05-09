@@ -1,3 +1,16 @@
+```markdown
+---
+title: Social Media Addiction Risk Analyzer
+emoji: 📱
+colorFrom: blue
+colorTo: indigo
+sdk: streamlit
+sdk_version: 1.31.0
+python_version: "3.9"
+app_file: app.py
+pinned: false
+---
+
 # 📱 Social Media Addiction Risk Analyzer with AdaBoost
 
 [![Sync to Hugging Face](https://github.com/Getaye/social-media-addiction-analyzer/actions/workflows/deploy.yml/badge.svg)](https://github.com/Getaye/social-media-addiction-analyzer/actions)
@@ -277,3 +290,4 @@ Addis Ababa University, Ethiopia
 ---
 
 **Questions?** Feel free to open an issue on GitHub or contact the author.
+```
