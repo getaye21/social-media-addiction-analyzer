@@ -1,4 +1,4 @@
-```markdown
+markdown
 ---
 title: Social Media Addiction Risk Analyzer
 emoji: 📱
