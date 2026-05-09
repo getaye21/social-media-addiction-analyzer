@@ -289,4 +289,3 @@ Addis Ababa University, Ethiopia
 ---
 
 **Questions?** Feel free to open an issue on GitHub or contact the author.
-```
