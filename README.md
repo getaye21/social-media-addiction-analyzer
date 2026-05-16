@@ -142,8 +142,9 @@ model = AdaBoostClassifier(
 
 1. Load synthetic dataset (50k rows) or user-provided CSV  
 2. Prepare features: numerical + one‑hot encoded platform dummies  
-3. Train AdaBoost model (fits all data)  
-4. Save model + metrics (accuracy, precision, recall, F1) to persistent storage  
+3. Split into training (80%) and testing (20%) – 40,000 training, 10,000 test.
+4. Train AdaBoost model on the training set and evaluate on the test set.
+5. The final production model is trained on all 50,000 rows to maximise performance, but the reported metrics come from the held‑out test set.Train AdaBoost model (fits all data)   
 
 ---
 
@@ -175,8 +176,9 @@ Synthetic dataset (50k) + all real “like” feedback
 | Precision (Weighted) | 87.1% |
 | Recall (Weighted) | 88.5% |
 | F1-Score | 87.8% |
-| Training Samples | 50,000 |
-| Test Samples | 10,000 (hold‑out) |
+| Training Samples | 40,000 |
+| Test Samples | 10,000 |
+| Total Dataset | 50,000 |
 
 ### Top 5 Most Important Features (from AdaBoost)
 
