@@ -13,6 +13,7 @@ import joblib
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.model_selection import train_test_split
 
 # ----------------------------------------------------------------------
 # SQLite datetime adapter (Python 3.12+)
@@ -139,6 +140,7 @@ def prepare_features(df):
 # Train AdaBoost (200 estimators) and save model
 # ----------------------------------------------------------------------
 def train_and_save_model(X, y, synthetic_flag=True):
+    """Train model on full dataset (used for final production model)."""
     base_learner = DecisionTreeClassifier(max_depth=2, random_state=42)
     model = AdaBoostClassifier(
         estimator=base_learner,
@@ -148,6 +150,7 @@ def train_and_save_model(X, y, synthetic_flag=True):
     )
     model.fit(X, y)
 
+    # For information only – not displayed to users
     y_pred = model.predict(X)
     acc = accuracy_score(y, y_pred)
     prec = precision_score(y, y_pred, average='weighted', zero_division=0)
@@ -171,12 +174,63 @@ def train_and_save_model(X, y, synthetic_flag=True):
     return model_data
 
 def generate_initial_model():
-    st.info("🚀 Training initial AdaBoost model (200 estimators) on 50,000 rows...")
+    """Train initial model with 80/20 train/test split and report realistic test accuracy."""
+    st.info("🚀 Training initial AdaBoost model (200 estimators) on 50,000 rows (80% train / 20% test)...")
     df = load_synthetic_dataset()
     X, y = prepare_features(df)
-    return train_and_save_model(X, y, synthetic_flag=True)
+
+    # Split into training and test sets (80/20)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    # Train on training set only to get realistic metrics
+    base_learner = DecisionTreeClassifier(max_depth=2, random_state=42)
+    model = AdaBoostClassifier(
+        estimator=base_learner,
+        n_estimators=200,
+        learning_rate=0.8,
+        random_state=42
+    )
+    model.fit(X_train, y_train)
+
+    # Evaluate on test set (realistic performance)
+    y_pred = model.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+    rec = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+    f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+
+    # For the production model, retrain on ALL data to have the best possible model
+    model_full = AdaBoostClassifier(
+        estimator=DecisionTreeClassifier(max_depth=2, random_state=42),
+        n_estimators=200,
+        learning_rate=0.8,
+        random_state=42
+    )
+    model_full.fit(X, y)
+
+    # Save model and metrics (test accuracy is stored for reference)
+    model_data = {
+        'model': model_full,
+        'features': X.columns.tolist(),
+        'metrics': {
+            'accuracy': acc,
+            'precision': prec,
+            'recall': rec,
+            'f1_score': f1,
+            'training_samples': len(X),
+            'test_samples': len(X_test),
+            'training_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'synthetic': True
+        }
+    }
+    joblib.dump(model_data, get_model_path())
+    st.success(f"✅ Initial AdaBoost model ready! Test accuracy: {acc:.2%}")
+    return model_data
 
 def train_model_from_feedback():
+    """Retrain using synthetic + all real 'like' feedback (full dataset)."""
     df_syn = load_synthetic_dataset()
     X_syn, y_syn = prepare_features(df_syn)
 
@@ -450,7 +504,7 @@ def get_all_user_feedback():
     return df
 
 # ----------------------------------------------------------------------
-# save_model_feedback — FIXED: no st.write debug, clean error handling
+# save_model_feedback — clean error handling
 # ----------------------------------------------------------------------
 def save_model_feedback(data):
     try:
@@ -608,8 +662,8 @@ if 'logged_in' not in st.session_state:
     st.session_state.public_menu = None
     st.session_state.dashboard_menu = "main"
     st.session_state.last_risk_result = None
-    st.session_state.last_inputs = None          # ← NEW: persist analyzer inputs
-    st.session_state.feedback_given = False       # ← NEW: prevent double-submit
+    st.session_state.last_inputs = None
+    st.session_state.feedback_given = False
 
 # ----------------------------------------------------------------------
 # Login page header (public)
@@ -883,7 +937,6 @@ elif st.session_state.dashboard_menu == "analyzer":
         work_val = 1 if work_related == "Yes" else 0
         result = analyze_risk(age, daily_hours, work_val, start_year, primary_platform, sleep_hours, mental_health)
 
-        # ── FIX: store result AND all inputs in session_state ──
         st.session_state.last_risk_result = result
         st.session_state.last_inputs = {
             'age': age,
@@ -893,13 +946,12 @@ elif st.session_state.dashboard_menu == "analyzer":
             'sleep_hours': sleep_hours,
             'mental_health': mental_health,
         }
-        st.session_state.feedback_given = False   # reset on new analysis
+        st.session_state.feedback_given = False
 
         log_risk_analysis(st.session_state.username, age, daily_hours, work_val,
                           start_year, primary_platform, sleep_hours, mental_health,
                           result['overall_risk'])
 
-    # ── FIX: render results & feedback OUTSIDE the analyze-button block ──
     if st.session_state.last_risk_result:
         result = st.session_state.last_risk_result
         model_data = load_model()
@@ -956,7 +1008,6 @@ elif st.session_state.dashboard_menu == "analyzer":
             </div>
             """, unsafe_allow_html=True)
 
-        # ── FIX: feedback section always visible after analysis ──
         st.markdown("### 🤖 Help Improve the Model")
         st.markdown("""
         <div class="info-box">
@@ -1002,7 +1053,6 @@ elif st.session_state.dashboard_menu == "analyzer":
                         st.rerun()
                     else:
                         st.error("❌ Failed to save feedback. Please try again.")
-
             with col_f2:
                 if st.button("👎 No, Inaccurate", key="unlike_btn", use_container_width=True):
                     inp = st.session_state.last_inputs
